@@ -1314,3 +1314,22 @@ void* FKAstroInferenceInstance::LockParameter( const pcl::MetaParameter* p, pcl:
    if ( p == TheFKVerboseParameter )      return &p_verbose;
    return pcl::ProcessImplementation::LockParameter( p, 0 );
 }
+
+bool FKAstroInferenceInstance::AllocateParameter( pcl::size_type sizeOrLength, const pcl::MetaParameter* p, pcl::size_type tableRow )
+{
+   if ( p == TheFKModelPathParameter )
+   {
+      p_modelPath.Clear();
+      if ( sizeOrLength > 0 )
+         p_modelPath.SetLength( sizeOrLength );
+      return true;
+   }
+   return pcl::ProcessImplementation::AllocateParameter( sizeOrLength, p, tableRow );
+}
+
+pcl::size_type FKAstroInferenceInstance::ParameterLength( const pcl::MetaParameter* p, pcl::size_type tableRow ) const
+{
+   if ( p == TheFKModelPathParameter )
+      return p_modelPath.Length();
+   return pcl::ProcessImplementation::ParameterLength( p, tableRow );
+}

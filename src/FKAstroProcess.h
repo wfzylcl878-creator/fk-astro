@@ -288,6 +288,8 @@ public:
    bool ExecuteOn( pcl::View& view ) override;
 
    void* LockParameter( const pcl::MetaParameter* p, pcl::size_type tableRow ) override;
+   bool AllocateParameter( pcl::size_type sizeOrLength, const pcl::MetaParameter* p, pcl::size_type tableRow ) override;
+   pcl::size_type ParameterLength( const pcl::MetaParameter* p, pcl::size_type tableRow ) const override;
 
    // Process parameters
    pcl::String p_modelPath;

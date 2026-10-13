@@ -287,6 +287,15 @@ bool CoreMLEngine::BuildModel( int device )
       return false;
    }
 
+#if defined( __x86_64__ )
+   /*
+    * Intel Macs: the Metal (MPSGraph) backend aborts the whole process with
+    * an MTLReportFailure assertion on some ops (e.g. RMSNorm), which cannot
+    * be caught or fallen back from. There is no ANE either, so run on CPU.
+    */
+   device = DeviceCPU;
+#endif
+
    MLModelConfiguration* cfg = [[MLModelConfiguration alloc] init];
    switch ( device )
    {
