@@ -115,7 +115,7 @@ build/$(1)/3rdparty/lz4/%.o: $(T)/lz4/%.c
 
 build/$(1)/3rdparty/zlib/%.o: $(T)/zlib/%.c
 	@mkdir -p $$(@D)
-	$$(CC) $$(BASE_CFLAGS) -arch $$(ARCH_CLANG_$(1)) -DZ_HAVE_UNISTD_H -I"$(T)/zlib" -c -o $$@ $$<
+	$$(CC) $$(BASE_CFLAGS) -arch $$(ARCH_CLANG_$(1)) -DZ_HAVE_UNISTD_H -Dfdopen=fdopen -I"$(T)/zlib" -c -o $$@ $$<
 
 build/$(1)/3rdparty/RFC6234/%.o: $(T)/RFC6234/%.c
 	@mkdir -p $$(@D)
