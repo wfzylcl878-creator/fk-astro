@@ -1,7 +1,8 @@
 ######################################################################
 # fk-astro — build system
 #
-# Builds a universal (arm64 + x86_64) PixInsight module:
+# Builds a PixInsight module (universal arm64 + x86_64 when the installed
+# PCL supports arm64, x86_64 only otherwise):
 #
 #   FKAstro-pxm.dylib
 #
@@ -24,7 +25,9 @@ SDK      = $(shell xcrun --sdk macosx --show-sdk-path)
 CXX      = clang++
 CC       = clang
 AR       = ar
-ARCHS    = arm64 x64
+# Build arm64 only when the installed PCL supports it (Apple Silicon
+# PixInsight builds ship makefile-arm64; Intel-only builds do not).
+ARCHS   ?= $(if $(wildcard $(PCLSRC)/pcl/macosx/g++/makefile-arm64),arm64 x64,x64)
 # clang arch flag per build dir ("x64" is PCL naming; clang wants x86_64)
 ARCH_CLANG_arm64 = arm64
 ARCH_CLANG_x64 = x86_64
@@ -151,7 +154,7 @@ endef
 
 $(foreach A,$(ARCHS),$(eval $(call PCL_RULES,$(A))))
 
-pcl: pcl-arm64 pcl-x64
+pcl: $(foreach A,$(ARCHS),pcl-$(A))
 
 #
 # Module
