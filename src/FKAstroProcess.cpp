@@ -2,7 +2,7 @@
  * fk-astro — FKAstroInference process implementation
  *
  * Runs a user-supplied CoreML model over the pixels of the current view,
- * using tiled inference with overlap margins and linear-ramp blending.
+ * using tiled inference with overlap margins and raised-cosine blending.
  */
 
 #include <pcl/Console.h>
@@ -31,6 +31,8 @@
 #include <algorithm>
 #include <type_traits>
 #include <chrono>
+#include <cmath>
+#include <limits>
 
 namespace
 {
@@ -266,7 +268,8 @@ struct FKNormalizer
 // Background statistic (PIPELINE.md §5): bg = P35 quantile of the normalized
 // image, measured once per image. Only positive samples are considered
 // (zero pixels are padding/synthetic); large images are stride-sampled to
-// bound the cost. Slot 5 = -log10(bg), wp = 0.505 * bg.
+// bound the cost. wp = 0.505 * bg, and FKv2 picks its curve from bg.
+// Column 5 is log10gain, computed separately.
 // ---------------------------------------------------------------------------
 
 template <class P>
@@ -316,6 +319,145 @@ static double FKBackgroundLevel( const pcl::ImageVariant& image )
       case 32: return FKBackgroundLevelT( static_cast<const pcl::UInt32Image&>( *image ) );
       }
    return 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// Column 5 when FKv1 or FKv2 is on: log10(x/asinh(x)).
+// The ~128-px grid is nearest-neighbor because the host resampler was not
+// ported. No positive samples leaves x = 1. This value does not select
+// the FKv2 curve and does not feed wp.
+// ---------------------------------------------------------------------------
+
+template <class P>
+static double FKLog10GainT( const pcl::GenericImage<P>& img )
+{
+   using sample = typename P::sample;
+   const int W = img.Width(), H = img.Height(), N = img.NumberOfChannels();
+   const double xOne = std::log10( 1.0 / std::asinh( 1.0 ) );
+   if ( W < 1 || H < 1 || N < 1 )
+      return xOne;
+
+   int x0 = int( double( W ) * 0.05 );
+   int y0 = int( double( H ) * 0.05 );
+   int cropW = W - 2 * x0;
+   int cropH = H - 2 * y0;
+   if ( cropW < 1 || cropH < 1 )
+   {
+      x0 = 0;
+      y0 = 0;
+      cropW = W;
+      cropH = H;
+   }
+
+   double high = -std::numeric_limits<double>::infinity();
+   for ( int c = 0; c < N; ++c )
+   {
+      const sample* plane = img.PixelData( c );
+      for ( int y = y0; y < y0 + cropH; ++y )
+      {
+         const sample* row = plane + size_t( y ) * size_t( W );
+         for ( int x = x0; x < x0 + cropW; ++x )
+         {
+            const double v = double( ToNormFloat( row[x] ) );
+            if ( std::isfinite( v ) && v > high )
+               high = v;
+         }
+      }
+   }
+
+   const int maxSide = std::max( cropW, cropH );
+   const double scale = double( maxSide ) / 128.0;
+   int gridW = 1, gridH = 1;
+   if ( scale > 0.0 )
+   {
+      gridW = std::max( 1, int( std::llround( double( cropW ) / scale ) ) );
+      gridH = std::max( 1, int( std::llround( double( cropH ) / scale ) ) );
+   }
+
+   std::vector<double> positive;
+   positive.reserve( size_t( gridW ) * size_t( gridH ) * size_t( N ) );
+   for ( int c = 0; c < N; ++c )
+   {
+      const sample* plane = img.PixelData( c );
+      for ( int iy = 0; iy < gridH; ++iy )
+      {
+         const int sy = y0 + std::min( cropH - 1,
+            int( ( double( iy ) + 0.5 ) * double( cropH ) / double( gridH ) ) );
+         const sample* row = plane + size_t( sy ) * size_t( W );
+         for ( int ix = 0; ix < gridW; ++ix )
+         {
+            const int sx = x0 + std::min( cropW - 1,
+               int( ( double( ix ) + 0.5 ) * double( cropW ) / double( gridW ) ) );
+            const double v = double( ToNormFloat( row[sx] ) );
+            if ( std::isfinite( v ) && v > 0.0 )
+               positive.push_back( v );
+         }
+      }
+   }
+
+   double low = 0.0;
+   if ( !std::isfinite( high ) )
+      positive.clear();
+   if ( positive.empty() )
+   {
+      low = 0.0;
+      high = 1.0;
+   }
+   else
+   {
+      std::sort( positive.begin(), positive.end() );
+      const double pos = double( positive.size() - 1 ) * 0.001;
+      const size_t i0 = size_t( pos );
+      const size_t i1 = std::min( i0 + 1, positive.size() - 1 );
+      const double frac = pos - double( i0 );
+      low = positive[i0] + frac * ( positive[i1] - positive[i0] );
+   }
+
+   if ( std::fabs( high - low ) < 0.001 )
+   {
+      low = 0.0;
+      high = 1.0;
+   }
+
+   double x = 1.0;
+   if ( !positive.empty() )
+   {
+      const double span = high - low;
+      std::vector<double> norm( positive.size() );
+      for ( size_t i = 0; i < positive.size(); ++i )
+         norm[i] = ( positive[i] - low ) / span;
+      const size_t mid = norm.size() / 2;
+      std::nth_element( norm.begin(), norm.begin() + ptrdiff_t( mid ), norm.end() );
+      const double m = norm[mid];
+      if ( m > 1.0e-6 )
+      {
+         x = 0.2 / ( m * ( m + 0.1 ) + 1.0e-12 );
+         if ( x < 1.0 )
+            x = 1.0;
+         else if ( x > 1.0e6 )
+            x = 1.0e6;
+      }
+   }
+
+   return std::log10( x / std::asinh( x ) );
+}
+
+static double FKLog10Gain( const pcl::ImageVariant& image )
+{
+   if ( image.IsFloatSample() )
+      switch ( image.BitsPerSample() )
+      {
+      case 32: return FKLog10GainT( static_cast<const pcl::Image&>( *image ) );
+      case 64: return FKLog10GainT( static_cast<const pcl::DImage&>( *image ) );
+      }
+   else
+      switch ( image.BitsPerSample() )
+      {
+      case 8:  return FKLog10GainT( static_cast<const pcl::UInt8Image&>( *image ) );
+      case 16: return FKLog10GainT( static_cast<const pcl::UInt16Image&>( *image ) );
+      case 32: return FKLog10GainT( static_cast<const pcl::UInt32Image&>( *image ) );
+      }
+   return std::log10( 1.0 / std::asinh( 1.0 ) );
 }
 
 // Local half-float conversions for memory-lean accumulators.
@@ -537,7 +679,7 @@ struct FKImageReaderT : public FKImageReader
 };
 
 /*
- * Store one output tile (center-crop geometry) with linear-ramp blending:
+ * Store one output tile (center-crop geometry) with raised-cosine blending:
  * acc += piece * w ; wsum += w. Output pixel (x0+ox, y0+oy) corresponds
  * 1:1 to the tile output; blending removes seams in overlap regions.
  */
@@ -624,22 +766,43 @@ void StoreTileScaled( std::vector<std::vector<float>>& dst,
 }
 
 
-// Linear-ramp blend window for one dimension (overlap ov of n pixels).
+// Raised cosine of length ov. Samples fall from ~1 to ~0; the ~0 end sits
+// on the outer border so two tiles whose origins differ by tile-ov sum to 1.
 static std::vector<float> Ramp( int n, int ov )
 {
-   std::vector<float> r( size_t( n ), 1.0f );
-   if ( ov > 0 )
+   std::vector<float> r( size_t( std::max( n, 0 ) ), 1.0f );
+   if ( ov <= 0 || n <= 0 )
+      return r;
+   constexpr double kPi = 3.14159265358979323846;
+   const int len = std::min( ov, n );
+   for ( int i = 0; i < len; ++i )
    {
-      // n+2 interior points of linspace(0,1,ov+2), i.e. strictly 0..1
-      std::vector<float> lin;
-      for ( int i = 1; i <= ov; ++i )
-         lin.push_back( float( i ) / float( ov + 1 ) );
-      for ( int i = 0; i < ov && i < n; ++i )
-         r[size_t( i )] = lin[size_t( i )];
-      for ( int i = 0; i < ov && i < n; ++i )
-         r[size_t( n - 1 - i )] = lin[size_t( ov - 1 - i )];
+      const int hostIndex = ov - i;
+      const double w = ( std::cos( hostIndex * kPi / double( ov + 1 ) ) + 1.0 ) * 0.5;
+      r[size_t( i )] = float( w );
+      r[size_t( n - 1 - i )] = float( w );
    }
    return r;
+}
+
+// Overlap implied by the middle step of an equal-pitch origin list.
+static int MidOverlap( const std::vector<int>& pos, int tile )
+{
+   if ( pos.size() < 2 || tile <= 1 )
+      return 0;
+   const size_t i = pos.size() / 2;
+   const size_t i0 = ( i == 0 ) ? 0 : i - 1;
+   if ( i0 + 1 >= pos.size() )
+      return 0;
+   int step = pos[i0 + 1] - pos[i0];
+   if ( step < 1 )
+      step = 1;
+   int ov = tile - step;
+   if ( ov < 0 )
+      ov = 0;
+   if ( ov >= tile )
+      ov = tile - 1;
+   return ov;
 }
 
 // Tile origin positions - PixInsight BXT-exact grid (reverse engineered from
@@ -898,26 +1061,19 @@ void RunPipeline( pcl::GenericImage<P>& img, const RunConfig& C )
       acc.assign( size_t( N ), std::vector<float>( plane, 0.0f ) );
       wsum.assign( plane, 0.0f );
 
-      // 2-D blend window from per-axis linear ramps. The ramp width follows
-      // the actual mid-grid tile spacing (sx = size/n), matching BXT's
-      // overlap rather than the nominal 20% figure.
-      // Positions() emits exactly n+1 origins (n = ceil(size/(tile*0.8)));
-      // mid-grid spacing sx = size/n.
-      const int ny = int( ys.size() ) - 1;
-      const int nx = int( xs.size() ) - 1;
-      const double sxY = ny > 0 ? double( H ) / ny : double( outTH );
-      const double sxX = nx > 0 ? double( W ) / nx : double( outTW );
-      const int rampY = std::min( outTH, std::max( 1, outTH - int( std::lround( sxY ) ) ) );
-      const int rampX = std::min( outTW, std::max( 1, outTW - int( std::lround( sxX ) ) ) );
+      // Equal-pitch origins first. The cosine length is the middle gap,
+      // tile minus that step. Measuring ys before Positions() saw an
+      // empty list and collapsed the blend to one pixel.
+      ys = Positions( H, outTH );
+      xs = Positions( W, outTW );
+      const int rampY = MidOverlap( ys, outTH );
+      const int rampX = MidOverlap( xs, outTW );
       const std::vector<float> ry = Ramp( outTH, rampY );
       const std::vector<float> rx = Ramp( outTW, rampX );
       win.assign( size_t( outTH )*outTW, 1.0f );
       for ( int y = 0; y < outTH; ++y )
          for ( int x = 0; x < outTW; ++x )
             win[ size_t( y )*outTW + x ] = ry[size_t( y )] * rx[size_t( x )];
-
-      ys = Positions( H, outTH );
-      xs = Positions( W, outTW );
    }
    else
    {
@@ -1084,7 +1240,9 @@ void RunPipeline( pcl::GenericImage<P>& img, const RunConfig& C )
             const int c = C.cfaMap[sy][x & 1];
             const size_t i = size_t( y )*W + x;
             float ws = wsum[i];
-            if ( ws < 1.0e-6f ) ws = 1.0f;
+            // Cosine borders are legitimately << 1e-6. Only a true zero
+            // means no tile wrote this pixel.
+            if ( !( ws > 0.0f ) ) ws = 1.0f;
             float v = acc[size_t( c )][i] / ws;
             if ( v < 0.0f ) v = 0.0f; else if ( v > 1.0f ) v = 1.0f;
             if constexpr ( std::is_floating_point<sample>::value )
@@ -1105,7 +1263,7 @@ void RunPipeline( pcl::GenericImage<P>& img, const RunConfig& C )
          for ( size_t i = 0; i < plane; ++i )
          {
             float ws = wsum[i];
-            if ( ws < 1.0e-6f ) ws = 1.0f;
+            if ( !( ws > 0.0f ) ) ws = 1.0f;
             float v = acc[size_t( c )][i] / ws;
             if ( v < 0.0f ) v = 0.0f; else if ( v > 1.0f ) v = 1.0f;
             if constexpr ( std::is_floating_point<sample>::value )
@@ -1175,6 +1333,7 @@ FKSharpenNonstellarParameter* TheFKSharpenNonstellarParameter = nullptr;
 FKAutoPSFParameter* TheFKAutoPSFParameter = nullptr;
 FKPSFDiameterParameter* TheFKPSFDiameterParameter = nullptr;
 FKCorrectOnlyParameter* TheFKCorrectOnlyParameter = nullptr;
+FKLunarPlanetaryParameter* TheFKLunarPlanetaryParameter = nullptr;
 FKNormSchemeParameter* TheFKNormSchemeParameter = nullptr;
 FKReflectPadParameter* TheFKReflectPadParameter = nullptr;
 FKTileOverlapParameter*  TheFKTileOverlapParameter  = nullptr;
@@ -1202,6 +1361,8 @@ FKAstroInferenceProcess::FKAstroInferenceProcess()
    new FKTileOverlapParameter( this );
    new FKDeviceParameter( this );
    new FKVerboseParameter( this );
+   // Appended so the FKv2 parameter ids keep their previous positions.
+   new FKLunarPlanetaryParameter( this );
 }
 
 pcl::IsoString FKAstroInferenceProcess::Id() const
@@ -1267,6 +1428,7 @@ void FKAstroInferenceInstance::Assign( const pcl::ProcessImplementation& x )
    p_psfDiameter  = p.p_psfDiameter;
    p_tileOverlap  = p.p_tileOverlap;
    p_correctOnly  = p.p_correctOnly;
+   p_lunarPlanetary = p.p_lunarPlanetary;
    p_normScheme   = p.p_normScheme;
    p_reflectPad   = p.p_reflectPad;
    p_device       = p.p_device;
@@ -1344,8 +1506,8 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
 
    // ---- normalization scheme (PIPELINE.md) ----
    //   None : pixels pass through, 5 user parameter slots only.
-   //   FKv1 : per-tile log/MTF/affine normalization + 6th parameters slot
-   //          (brightness statistic, computed from the background level).
+   //   FKv1 : log/MTF/affine curve. FKv2 : calibrated PCHIP curve.
+   //          Both write column 5 as log10gain. wp and FKv2 selection use P35.
    const int normScheme = int( p_normScheme );
    const bool needs6 = ( normScheme >= 1 );   // FKv1 and FKv2 both use 6 params
    double bg = 0.0, slot5 = 0.0;
@@ -1363,7 +1525,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
          throw pcl::Error( "fk-astro: FKv1: the image has no positive pixels; "
                            "cannot derive the background statistic." );
       bg = std::min( std::max( bg, 1.0e-12 ), 1.0 );
-      slot5 = -std::log10( bg );
+      slot5 = FKLog10Gain( image );
 
       C.normalizer.scheme = (normScheme == 2) ? FKNormalizer::FKv2
                                              : FKNormalizer::FKv1;
@@ -1373,9 +1535,9 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
 
       if ( p_verbose )
          pcl::Console().WriteLn( pcl::IsoString().Format(
-            "fk-astro: FKv%c: bg(P35)=%.6g  slot5=-log10(bg)=%.4f  wp=0.505*bg=%.6g%s",
+            "fk-astro: FKv%c: log10gain=%.6g  bg(P35)=%.6g  wp=0.505*bg=%.6g%s",
             normScheme == 2 ? '2' : '1',
-            bg, slot5, C.normalizer.wp,
+            slot5, bg, C.normalizer.wp,
             (normScheme == 2 && C.normalizer.curve)
                ? pcl::IsoString().Format( "  curve bg=%.5g (%d nodes)",
                     C.normalizer.curve->bg, C.normalizer.curve->n ).c_str()
@@ -1385,7 +1547,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
    // ---- parameters tensor payload (model contract: [1,5] or [1,6]) ----
    //   [0] sharpenStars        [1] adjustStarHalos in [0,1]
    //   [2] psfDiameter/2       [3] autoPSF flag (1/0)
-   //   [4] sharpenNonstellar   [5] brightness = -log10(bg) (FKv1 only)
+   //   [4] sharpenNonstellar   [5] log10gain (FKv1 and FKv2)
    if ( engine.HasParamsInput() )
    {
       C.params.assign( engine.ParamsSize(), 0.0f );
@@ -1416,7 +1578,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
          if ( C.params.size() > 4 )
             C.params[4] = float( p_sharpenNonstellar );
       }
-      // Slot 5: brightness statistic, computed (never a user parameter).
+      // lunarPlanetary is a mode flag and is not a column.
       if ( needs6 && C.params.size() > 5 )
          C.params[5] = float( slot5 );
    }
@@ -1431,7 +1593,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
               << pcl::IsoString().Format( "%d", int( C.params.size() ) ) << "]:";
          const char* names[6] = { " sharpenStars", " adjustStarHalos",
                                   " psfDiameter/2", " autoPSF",
-                                  " sharpenNonstellar", " brightness" };
+                                  " sharpenNonstellar", " log10gain" };
          for ( size_t i = 0; i < C.params.size(); ++i )
          {
             pmsg << ( i < 6 ? names[i] : " unused" )
@@ -1445,6 +1607,9 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
       else
          pmsg = "fk-astro: params: model has no parameters input";
       pcl::Console().WriteLn( pcl::String( pmsg ) );
+      pcl::Console().WriteLn( pcl::IsoString().Format(
+         "fk-astro: lunarPlanetary=%s (mode flag, not a parameters column)",
+         p_lunarPlanetary ? "on" : "off" ).c_str() );
    }
 
    // ---- channel mapping ----
@@ -1598,6 +1763,7 @@ void* FKAstroInferenceInstance::LockParameter( const pcl::MetaParameter* p, pcl:
    if ( p == TheFKAutoPSFParameter ) return &p_autoPSF;
    if ( p == TheFKPSFDiameterParameter ) return &p_psfDiameter;
    if ( p == TheFKCorrectOnlyParameter ) return &p_correctOnly;
+   if ( p == TheFKLunarPlanetaryParameter ) return &p_lunarPlanetary;
    if ( p == TheFKNormSchemeParameter ) return &p_normScheme;
    if ( p == TheFKReflectPadParameter ) return &p_reflectPad;
    if ( p == TheFKTileOverlapParameter )  return &p_tileOverlap;

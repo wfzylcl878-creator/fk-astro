@@ -35,6 +35,8 @@ extern FKAutoPSFParameter* TheFKAutoPSFParameter;
 extern FKPSFDiameterParameter* TheFKPSFDiameterParameter;
 class FKCorrectOnlyParameter;
 extern FKCorrectOnlyParameter* TheFKCorrectOnlyParameter;
+class FKLunarPlanetaryParameter;
+extern FKLunarPlanetaryParameter* TheFKLunarPlanetaryParameter;
 class FKNormSchemeParameter;
 class FKReflectPadParameter;
 extern FKNormSchemeParameter* TheFKNormSchemeParameter;
@@ -142,10 +144,10 @@ public:
    }
 };
 
-// Normalization scheme: None = pass pixels through, 5-parameter vector;
-// FKv1 = PIPELINE.md 6-parameter contract (per-tile log/MTF/affine
-// normalization around the background working point, slot 5 = -log10(bg)
-// computed automatically).
+// Normalization scheme: None = 5 user slots.
+// FKv1 = log/MTF/affine around wp = 0.505*P35.
+// FKv2 = calibrated curve selected from that same P35.
+// Both 6-parameter schemes write column 5 as log10gain.
 class FKNormSchemeParameter : public pcl::MetaEnumeration
 {
 public:
@@ -194,6 +196,20 @@ public:
    pcl::IsoString Id() const override
    {
       return "correctOnly";
+   }
+};
+
+// Mode flag. Not a parameters-tensor column.
+class FKLunarPlanetaryParameter : public pcl::MetaBoolean
+{
+public:
+   FKLunarPlanetaryParameter( pcl::MetaProcess* P ) : pcl::MetaBoolean( P )
+   {
+      TheFKLunarPlanetaryParameter = this;
+   }
+   pcl::IsoString Id() const override
+   {
+      return "lunarPlanetary";
    }
 };
 
@@ -300,7 +316,9 @@ public:
    double      p_psfDiameter  = 0.0;         // [0, 8], used when !p_autoPSF
    double      p_tileOverlap  = 0.2;         // fraction of tile size, [0, 0.5]
    bool        p_correctOnly  = true;
-   pcl::pcl_enum p_normScheme = 0;    // 0=None (5 params) 1=FKv1 (6 params, PIPELINE.md)
+   // Mode flag, default off. Not written into the parameters vector.
+   bool        p_lunarPlanetary = false;
+   pcl::pcl_enum p_normScheme = 0;    // 0=None 1=FKv1 2=FKv2
    bool        p_reflectPad   = true;
    pcl::pcl_enum p_device       = 0;  // 0=Auto 1=GPU 2=CPU
    bool        p_verbose      = true;

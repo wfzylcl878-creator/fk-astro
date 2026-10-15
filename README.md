@@ -79,20 +79,23 @@ Additional Options。
 | psfDiameter / autoPSF | 0.0 / true | 目标 PSF 直径 [0, 8] px;自动时模型自估(参数槽 2/3) |
 | sharpenNonstellar | 0.5 | 非恒星区锐化强度 [0, 1](参数槽 4) |
 | correctOnly | true | 中性校正模式:槽 0–4 清零(自动 PSF 仍生效) |
+| lunarPlanetary | false | Lunar/Planetary 模式开关。只随进程保存,不写入 parameters 的 6 列 |
 | normScheme | None | 归一化方案,见下 |
-| reflectPad | true | 分块窗口越界时镜像填充(否则复制边缘像素) |
-| tileOverlap | 0.2 | 相邻块重叠比例 [0, 0.5](消除块间接缝) |
+| reflectPad | true | 分块窗口越界时镜像填充(否则复制边缘像素)。FKv2 越界填 0 |
+| tileOverlap | 0.2 | 相邻块重叠比例 [0, 0.5]。中心裁切的块原点仍是等间距网格,接缝用升余弦,窗长取中间块的实际间距 |
 | device | Auto | Auto / GPU / CPU |
 | verbose | true | 过程控制台输出进度 |
 
 ### 归一化(Options 区)
 
 - **None** — 像素直通模型,参数向量只含 5 个用户槽位。
-- **FKv1** — PIPELINE.md 的 6 参数契约:每图测一次背景统计
-  `bg = P35 分位数`,第 6 入参 `slot5 = -log10(bg)` 自动计算(非用户参数),
-  逐块做 `log → MTF(m=0.100) → affine(a=1.4685, b=-0.7095)` 正向归一化、
-  推理后逆变换贴回,工作点 `wp = 0.505 × bg`。要求模型声明
-  `[1, 6]` parameters 输入(5 参数模型选 FKv1 会直接报错)。
+- **FKv1** — 逐块像素曲线仍是
+  `log → MTF(m=0.100) → affine(a=1.4685, b=-0.7095)`,工作点
+  `wp = 0.505 × bg`,`bg` 是正像素的 P35。
+- **FKv2** — 用同一份 P35 在标定曲线里选一条,曲线在 `src/FKCurves.h`。
+  越界像素填 0。
+- 两种方案的第 6 列都是 `log10gain`,不再是 `-log10(P35)`。要求模型声明
+  `[1, 6]` parameters 输入。
 
 ## 模型要求(当前骨架的限制)
 
@@ -110,5 +113,6 @@ Additional Options。
   `@executable_path/FKAstro-pxm.dylib`
 - 链接:`-lPCL-pxi -llz4-pxi -lzstd-pxi -lzlib-pxi -lRFC6234-pxi -llcms-pxi`
   + `-framework AppKit -framework Foundation -framework CoreML`
-- 分块:步长 = 块尺寸 − 2×边距,窗口原点钳位到 `[0, W−TW]`,
-  输出只写每块中心区域,重叠区由后续块覆盖 → 无缝
+- 分块原点: `n = ceil(size / (tile*0.8))`,`sx = size/n`,中间块
+  `round(sx*k - (tile-sx)/2)`,第一块 0,最后一块贴边。
+  混合权重是升余弦,窗长等于中间两块的实际重叠。输出只写每块中心区域。
