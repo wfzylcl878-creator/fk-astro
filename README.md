@@ -3,7 +3,7 @@
 PixInsight 里的 CoreML 分块推理模块(`.mlpackage` / `.mlmodel` 明文直读),
 默认提供 **FKv3 宿主处理方案**：整图 arcsinh 归一化、六列参数、带上下文的分块、
 接缝融合后整图逆变换。逻辑依据官方 ML5 宿主的 dylib 静态分析恢复，当前完成离线验证，
-尚未验证新路径的官方成图误差。FKv1/FKv2 保留作旧实现对照。
+尚未验证新路径的官方成图误差。FKv2 保留作旧实现对照(FKv1 已移除)。
 
 两用:
 
@@ -21,7 +21,7 @@ fk-astro/
 │   ├── CoreMLEngine.h    CoreML 引擎接口(纯 C++)
 │   ├── CoreMLEngine.mm   引擎实现:compileModelAtURL / MLModel / MLMultiArray
 │   ├── FKAstroProcess.h  进程与参数元类定义
-│   ├── FKAstroProcess.cpp  分块推理管线(FKv3 / 旧 FKv1、FKv2 方案)
+│   ├── FKAstroProcess.cpp  分块推理管线(FKv3 / 旧 FKv2 方案)
 │   ├── FKv3Pipeline.h    可离线测试的 FKv3 归一化、参数、分块与融合
 │   ├── TensorLayout.h    按 strides 访问张量
 │   ├── FKCurves.h        FKv2 标定曲线库(5 组 × 498 节点,BXT ML5 运行时采集)
@@ -98,8 +98,9 @@ Additional Options。
 ### 处理方案(Options 区)
 
 界面通过 **Processing scheme** 选择宿主处理方案；模型文件仍由 **Model path** 单独指定。
-`FKv1/FKv2/FKv3` 是本项目方案名，`ML5` 指官方模型版本。参数 ID 保持 `normScheme`，
-枚举值为 `None=0/FKv1=1/FKv2=2/FKv3=3`。
+`FKv2/FKv3` 是本项目方案名，`ML5` 指官方模型版本。参数 ID 保持 `normScheme`，
+枚举值为 `None=0/FKv2=2/FKv3=3`(值 1 为已移除的 FKv1,历史编号不复用;
+旧 FKv1 实例执行时会报错,需重新选择方案)。
 
 - **FKv3**（新实例默认，按恢复的官方 ML5 调用约定实现）— 按整图拟合 `arcsinh,wp=1`，第六列为同一状态的
   `log10(x/asinh(x))`。裁边 5%、长边 128 最近邻正样本、low 为 0.1% 分位、
@@ -111,13 +112,7 @@ Additional Options。
 - **None** — 像素直通模型,参数向量只含 5 个用户槽位。
   BXT **ML4(5 参数模型)用这个**:官方 ML4 的归一化接近恒等,
   直通即可到全图 mean 差 ~8e-5 的精度(见下表)。
-- **FKv1**（旧经验方案）— 每图测一次背景统计 `bg = P35 分位数`,
-  第 6 入参 `slot5 = log10gain` 自动计算(非用户参数,不是 `-log10(bg)`),
-  逐块做 `log → MTF(m=0.100) → affine(a=1.4685, b=-0.7095)` 正向归一化、
-  推理后逆变换贴回,工作点 `wp = 0.505 × bg`。要求模型声明
-  `[1, 6]` parameters 输入(5 参数模型选 FKv1 会直接报错)。
-  暗区可用,亮区相对误差可达 30–130%,已被 FKv2 取代,仅留作对照。
-- **FKv2**（旧标定方案） — 标定曲线归一化。同 FKv1 一样按图测 `bg`,
+- **FKv2**（旧标定方案） — 标定曲线归一化。按图测 `bg = P35 分位数`,
   第 6 列同样是 `log10gain`。正/逆变换换成从 **BlurXTerminator ML5 运行时真实模型
   输入**采集的单调曲线(`src/FKCurves.h`):
   - 曲线按 `log(bg)` 最近邻从 5 组标定中选择
@@ -137,7 +132,7 @@ float32 运算后转 double 取整；小图保留负原点以居中。
 
 余弦过渡带位于等间距接缝附近；带外多余覆盖置零，整图外边界不衰减。
 输出在 double 模型域直接加权累加，整图只逆变换一次，不除以权重和。
-FKv1/FKv2 仍走旧网格和逐块逆变换，不能代表新 FKv3 逻辑。
+FKv2 仍走旧网格和逐块逆变换，不能代表新 FKv3 逻辑。
 
 ## BXT 复现配方与精度
 
@@ -159,7 +154,6 @@ M31 单帧(6248×4176, 16bit, ML5, sharpen 0.56/0.37, halo 0.10, autoPSF)
 | 配置 | P50 | P99 | P99.9 | 亮区(a>0.03)相对 | d>0.3 占比 |
 |---|---|---|---|---|---|
 | **ML5 + FKv2** | **0**（P50，不代表全图逐位相同） | 2.9e-4 | 5.7e-3 | 3.4% | 0.0000% |
-| ML5 + FKv1(对照) | 0 | — | — | 37.5–129% | — |
 | ML4 + None | 1.5e-5 | 7.0e-4 | — | 6.1% | — |
 
 ML4 结论:官方 ML4 归一化近恒等(5 参数模型,无背景槽),

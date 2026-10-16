@@ -8,6 +8,19 @@
 
 FKAstroInterface* TheFKAstroInterface = nullptr;
 
+// The combo box holds 3 items (None/FKv2/FKv3) while the stored scheme keeps
+// its historical values (None=0, FKv2=2, FKv3=3). A stored FKv1 (1) displays
+// as FKv3 here but still fails the scheme check on execution until the user
+// re-selects.
+static int SchemeComboIndex( int value )
+{
+   return (value == 0) ? 0 : (value == 2) ? 1 : 2;
+}
+static int SchemeComboValue( int index )
+{
+   return (index == 0) ? 0 : (index == 1) ? 2 : 3;
+}
+
 // ---------------------------------------------------------------------------
 // Deferred GUI initialization
 // ---------------------------------------------------------------------------
@@ -165,26 +178,20 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
 
       GUI->NormLabel.SetText( "Processing scheme:" );
       GUI->NormCombo.AddItem( "None" );
-      GUI->NormCombo.AddItem( "FKv1" );
       GUI->NormCombo.AddItem( "FKv2" );
       GUI->NormCombo.AddItem( "FKv3" );
-      GUI->NormCombo.SetCurrentItem( m_normScheme );
+      GUI->NormCombo.SetCurrentItem( SchemeComboIndex( m_normScheme ) );
       GUI->NormCombo.SetToolTip(
          "<p><b>None</b> — pixels are passed to the model unchanged and the "
          "parameters vector carries the five user slots (sharpen stars, "
          "star halos, PSF diameter, automatic PSF, sharpen nonstellar).</p>"
-         "<p><b>FKv1</b> — the background statistic bg is measured once per "
-         "image (P35 quantile). Each tile uses the FKv1 curve (log stretch "
-         "around the working point 0.505*bg, MTF with m=0.100, affine "
-         "a=1.4685, b=-0.7095) before inference, with its inverse applied "
-         "to the model output.</p>"
-         "<p><b>FKv2</b> (legacy calibration) — same "
-         "per-image P35 statistic, but the forward/inverse transforms use "
-         "calibrated monotone curves captured at runtime from the ML5 model "
-         "inputs (FKCurves.h): the curve whose bg is closest in log space "
-         "is selected and evaluated with monotone PCHIP interpolation, with "
-         "the inverse saturating at the curve endpoints. Out-of-range "
-         "window pixels are zero-filled.</p>"
+         "<p><b>FKv2</b> (legacy calibration) — the background statistic bg "
+         "is measured once per image (P35 quantile) and the forward/inverse "
+         "transforms use calibrated monotone curves captured at runtime from "
+         "the ML5 model inputs (FKCurves.h): the curve whose bg is closest "
+         "in log space is selected and evaluated with monotone PCHIP "
+         "interpolation, with the inverse saturating at the curve endpoints. "
+         "Out-of-range window pixels are zero-filled.</p>"
          "<p><b>FKv3</b> (default, recovered ML5 host flow) — fit an arcsinh "
          "transform to the whole "
          "image with white point 1. The sixth parameter uses the gain of "
@@ -350,7 +357,7 @@ bool FKAstroInterface::ImportProcess( const pcl::ProcessImplementation& P )
       GUI->PSFDiameter.Enable( !m_autoPSF );
       GUI->CorrectOnlyCheck.SetChecked( m_correctOnly );
       GUI->LunarPlanetaryCheck.SetChecked( m_lunarPlanetary );
-      GUI->NormCombo.SetCurrentItem( m_normScheme );
+      GUI->NormCombo.SetCurrentItem( SchemeComboIndex( m_normScheme ) );
       GUI->ReflectPadCheck.SetChecked( m_reflectPad );
       GUI->TileOverlap.SetValue( m_tileOverlap );
       GUI->DeviceCombo.SetCurrentItem( m_device );
@@ -478,7 +485,7 @@ void FKAstroInterface::UpdateEnabledStates()
 
 void FKAstroInterface::e_NormScheme( pcl::ComboBox&, int itemIndex )
 {
-   m_normScheme = itemIndex;
+   m_normScheme = SchemeComboValue( itemIndex );
    UpdateEnabledStates();
 }
 

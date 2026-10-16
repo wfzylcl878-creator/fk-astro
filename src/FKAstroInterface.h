@@ -7,7 +7,7 @@
  *   Model                 — model path
  *   Stellar Adjustments   — Sharpen Stars, Adjust Star Halos
  *   Nonstellar Adjustments — Sharpen Nonstellar, Automatic PSF, PSF Diameter
- *   Options               — Correct Only, Lunar/Planetary, Processing scheme (None / FKv1 / FKv2 / FKv3)
+ *   Options               — Correct Only, Lunar/Planetary, Processing scheme (None / FKv2 / FKv3)
  *   Additional Options    — Tile Overlap, Reflect Padding, Compute Device, Verbose
  */
 
@@ -66,7 +66,7 @@ private:
    double      m_psfDiameter  = 0.0;         // [0, 8]
    bool        m_correctOnly  = true;
    bool        m_lunarPlanetary = false;
-   int         m_normScheme   = 3;    // 0=None 1=FKv1 2=FKv2 3=FKv3
+   int         m_normScheme   = 3;    // stored value: 0=None 2=FKv2 3=FKv3
    bool        m_reflectPad   = true;
    double      m_tileOverlap  = 0.2;         // fraction [0, 0.5]
    int         m_device       = 0;

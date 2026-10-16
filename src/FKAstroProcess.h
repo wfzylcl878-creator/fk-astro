@@ -145,9 +145,12 @@ public:
 };
 
 // Processing scheme: None = 5 user slots.
-// FKv1 = log/MTF/affine around wp = 0.505*P35.
-// FKv2 = calibrated curve selected from that same P35.
+// FKv2 = calibrated PCHIP curve selected from the P35 background.
 // FKv3 = recovered ML5 host flow: fitted arcsinh,wp=1 and paired log10gain.
+// Element values keep their historical numbering: None=0, FKv2=2, FKv3=3.
+// FKv1 (=1) was removed; instances saved with it fail the scheme check in
+// ExecuteOn until the user re-selects a scheme. Never renumber to fill the
+// gap - a stored value 2 must keep meaning FKv2.
 class FKNormSchemeParameter : public pcl::MetaEnumeration
 {
 public:
@@ -161,19 +164,19 @@ public:
    }
    pcl::size_type NumberOfElements() const override
    {
-      return 4;
+      return 3;
    }
    pcl::IsoString ElementId( pcl::size_type idx ) const override
    {
-      return (idx == 0) ? "None" : (idx == 1) ? "FKv1" : (idx == 2) ? "FKv2" : "FKv3";
+      return (idx == 0) ? "None" : (idx == 1) ? "FKv2" : "FKv3";
    }
    int ElementValue( pcl::size_type idx ) const override
    {
-      return int( idx );
+      return (idx == 0) ? 0 : (idx == 1) ? 2 : 3;
    }
    pcl::size_type DefaultValueIndex() const override
    {
-      return 3;
+      return 2;
    }
 };
 
@@ -322,7 +325,7 @@ public:
    bool        p_correctOnly  = true;
    // FKv3 mode: controls normalization and effective parameter overrides.
    bool        p_lunarPlanetary = false;
-   pcl::pcl_enum p_normScheme = 3;    // 0=None 1=FKv1 2=FKv2 3=FKv3
+   pcl::pcl_enum p_normScheme = 3;    // 0=None 2=FKv2 3=FKv3 (1 = removed FKv1)
    bool        p_reflectPad   = true;
    pcl::pcl_enum p_device       = 0;  // 0=Auto 1=GPU 2=CPU
    bool        p_verbose      = true;

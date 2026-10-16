@@ -54,26 +54,14 @@ float ToNormFloat( S v )
 }
 
 // ---------------------------------------------------------------------------
-// Per-tile normalization (PIPELINE.md §6): forward before the model, inverse
-// after inference.
-//
-//   FKv1 forward:  t = log(clamp(x,1e-12)/wp) / log(1/wp)
-//                  z = clip( MTF(t, m), 0, 1 )      with m = 0.100
-//                  y = a*z + b                      a = 1.4685, b = -0.7095
-//   FKv1 inverse:  z = clip( (y-b)/a, 0, 1 )
-//                  t = z*m / (z*(2m-1) - (m-1))
-//                  x = wp * exp( t * log(1/wp) )
-//
-// The working point wp = 0.505 * bg is derived once per image from the
-// background statistic; the curve constants are fixed by the training
-// pipeline and are not user-adjustable.
+// Per-tile normalization: forward before the model, inverse after inference.
+// Values match FKNormSchemeParameter: None=0, FKv2=2, FKv3=3 (FKv1=1 removed).
 // ---------------------------------------------------------------------------
 struct FKNormalizer
 {
-   enum Scheme { None = 0, FKv1 = 1, FKv2 = 2, FKv3 = 3 };
+   enum Scheme { None = 0, FKv2 = 2, FKv3 = 3 };
 
    Scheme scheme = None;
-   double wp = 0.01;   // FKv1 working point, = 0.505 * background level
    double bg = 0.01;   // image background statistic (curve selection for FKv2)
    const fka::FKCurve* curve = nullptr;   // FKv2 selected curve
    fka::fkv3::ArcsinhNormalizer fkv3;
@@ -209,7 +197,7 @@ struct FKNormalizer
          return float( fkv3.Forward( double( x ) ) );
       if ( scheme == FKv2 && curve != nullptr )
          return float( Interp( curve->x, curve->y, curve->n, x ) );
-      return ForwardFKv1( x );
+      return x;   // None: pixels pass through unchanged
    }
 
    float Inverse( float y ) const
@@ -227,48 +215,7 @@ struct FKNormalizer
          if ( yv >= y1 ) return float( curve->x[curve->n - 1] );
          return float( EvalPchip( curve->y, curve->x, slopeI, curve->n, yv ) );
       }
-      return InverseFKv1( y );
-   }
-
-   static constexpr double M = 0.100;     // MTF midtone
-   static constexpr double A = 1.4685;    // affine gain
-   static constexpr double B = -0.7095;   // affine offset
-
-   // PixInsight MTF: maps x == m to 0.5.
-   static double MtfFwd( double m, double x )
-   {
-      double d = (2.0*m - 1.0)*x - m;
-      return (d == 0.0) ? 0.5 : (m - 1.0)*x / d;
-   }
-   static double MtfInv( double m, double y )
-   {
-      double d = y*(2.0*m - 1.0) + 1.0 - m;
-      return (d == 0.0) ? m : y*m / d;
-   }
-
-   float ForwardFKv1( float x ) const
-   {
-      if ( scheme == None )
-         return x;
-      const double lwp = std::log( 1.0 / wp );
-      const double xc = std::max( double( x ), 1.0e-12 );
-      const double t = std::log( xc / wp ) / lwp;
-      double z = MtfFwd( M, t );
-      if ( z < 0.0 ) z = 0.0; else if ( z > 1.0 ) z = 1.0;
-      return float( A * z + B );
-   }
-
-   float InverseFKv1( float y ) const
-   {
-      if ( scheme == None )
-         return y;
-      double z = ( double( y ) - B ) / A;
-      if ( z < 0.0 ) z = 0.0; else if ( z > 1.0 ) z = 1.0;
-      double t = MtfInv( M, z );
-      // Dark-end extrapolation: allow t < 0 (no clamp) so sub-background
-      // model outputs map back below the background instead of clipping.
-      if ( t > 1.0 ) t = 1.0;
-      return float( wp * std::exp( t * std::log( 1.0 / wp ) ) );
+      return y;   // None: identity
    }
 };
 
@@ -276,7 +223,7 @@ struct FKNormalizer
 // Background statistic (PIPELINE.md §5): bg = P35 quantile of the normalized
 // image, measured once per image. Only positive samples are considered
 // (zero pixels are padding/synthetic); large images are stride-sampled to
-// bound the cost. wp = 0.505 * bg, and FKv2 picks its curve from bg.
+// bound the cost. FKv2 picks its curve from bg.
 // Column 5 is log10gain, computed separately.
 // ---------------------------------------------------------------------------
 
@@ -330,10 +277,10 @@ static double FKBackgroundLevel( const pcl::ImageVariant& image )
 }
 
 // ---------------------------------------------------------------------------
-// Column 5 when FKv1 or FKv2 is on: log10(x/asinh(x)).
+// Column 5 when FKv2 is on: log10(x/asinh(x)).
 // The ~128-px grid is nearest-neighbor because the host resampler was not
 // ported. No positive samples leaves x = 1. This value does not select
-// the FKv2 curve and does not feed wp.
+// the FKv2 curve.
 // ---------------------------------------------------------------------------
 
 template <class P>
@@ -1603,11 +1550,15 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
 
    // ---- processing scheme ----
    //   None : pixels pass through, 5 user parameter slots only.
-   //   FKv1 : log/MTF/affine curve. FKv2 : calibrated PCHIP curve.
-   //          Both write column 5 as log10gain. wp and FKv2 selection use P35.
+   //   FKv2 : calibrated PCHIP curve selected from the P35 background.
+   //          Column 5 is log10gain.
+   //   FKv3 : recovered ML5 host flow (arcsinh,wp=1 + paired log10gain).
    const int normScheme = int( p_normScheme );
-   if ( normScheme < FKNormalizer::None || normScheme > FKNormalizer::FKv3 )
-      throw pcl::Error( "fk-astro: unknown processing scheme." );
+   if ( normScheme != FKNormalizer::None
+     && normScheme != FKNormalizer::FKv2
+     && normScheme != FKNormalizer::FKv3 )
+      throw pcl::Error( "fk-astro: unknown processing scheme. FKv1 was removed; "
+                        "re-select the processing scheme and try again." );
    const bool fkv3 = normScheme == FKNormalizer::FKv3;
    fka::fkv3::Settings controls;
    controls.stars = p_sharpenStars;
@@ -1618,7 +1569,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
    controls.correctOnly = p_correctOnly;
    controls.lunar = p_lunarPlanetary;
    const fka::fkv3::Settings effective = controls.Effective();
-   const bool needs6 = ( normScheme >= 1 );
+   const bool needs6 = ( normScheme == FKNormalizer::FKv2 );
    double bg = 0.0, slot5 = 0.0;
    if ( fkv3 )
    {
@@ -1648,30 +1599,27 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
    {
       if ( !engine.HasParamsInput() || engine.ParamsSize() < 6 )
          throw pcl::Error( pcl::IsoString().Format(
-            "fk-astro: FKv1 normalization requires a model with a 6-element "
+            "fk-astro: FKv2 normalization requires a model with a 6-element "
             "parameters input; this model declares %d element(s). Select "
             "'None' for 5-parameter models.",
             engine.HasParamsInput() ? int( engine.ParamsSize() ) : 0 ) );
 
       bg = FKBackgroundLevel( image );
       if ( bg <= 0.0 )
-         throw pcl::Error( "fk-astro: FKv1: the image has no positive pixels; "
+         throw pcl::Error( "fk-astro: FKv2: the image has no positive pixels; "
                            "cannot derive the background statistic." );
       bg = std::min( std::max( bg, 1.0e-12 ), 1.0 );
       slot5 = FKLog10Gain( image );
 
-      C.normalizer.scheme = (normScheme == 2) ? FKNormalizer::FKv2
-                                             : FKNormalizer::FKv1;
-      C.normalizer.wp = 0.505 * bg;
+      C.normalizer.scheme = FKNormalizer::FKv2;
       C.normalizer.bg = bg;
       C.normalizer.SelectCurve();
 
       if ( p_verbose )
          pcl::Console().WriteLn( pcl::IsoString().Format(
-            "fk-astro: FKv%c: log10gain=%.6g  bg(P35)=%.6g  wp=0.505*bg=%.6g%s",
-            normScheme == 2 ? '2' : '1',
-            slot5, bg, C.normalizer.wp,
-            (normScheme == 2 && C.normalizer.curve)
+            "fk-astro: FKv2: log10gain=%.6g  bg(P35)=%.6g%s",
+            slot5, bg,
+            C.normalizer.curve
                ? pcl::IsoString().Format( "  curve bg=%.5g (%d nodes)",
                     C.normalizer.curve->bg, C.normalizer.curve->n ).c_str()
                : "" ).c_str() );
