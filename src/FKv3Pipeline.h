@@ -212,9 +212,10 @@ struct AxisGrid
 
 // Raw model outputs remain in model space during fusion. Clip the valid
 // destination rectangle before computing unsigned offsets (small images can
-// have negative tile origins). add(channel,pixel,value) owns the accumulation.
+// have negative tile origins). Match the sink's per-tile RGB-to-mono mean
+// before accumulation. add(channel,pixel,value) owns the accumulation.
 template <class Add>
-void BlendTile( const float* output, int channels, int tileW, int tileH,
+void BlendTile( const float* output, int channels, int imageChannels, int tileW, int tileH,
                 int x0, int y0, int width, int height,
                 const std::vector<double>& wx, const std::vector<double>& wy, Add add )
 {
@@ -223,8 +224,21 @@ void BlendTile( const float* output, int channels, int tileW, int tileH,
       {
          const int ox = x - x0, oy = y - y0;
          const size_t src = size_t( oy ) * tileW + ox, dst = size_t( y ) * width + x;
-         for ( int c = 0; c < channels; ++c )
-            add( c, dst, ( double( output[size_t( c ) * tileW * tileH + src] ) * wx[size_t( ox )] ) * wy[size_t( oy )] );
+         auto weighted = [&]( int c )
+         {
+            return ( double( output[size_t( c ) * tileW * tileH + src] ) * wx[size_t( ox )] ) * wy[size_t( oy )];
+         };
+         if ( channels == 3 && imageChannels == 1 )
+         {
+            // MatExpr materializes R+G, then addWeighted scales that pair
+            // and B by 1/3. Preserve this grouping before adding the tile.
+            const double pair = weighted( 0 ) + weighted( 1 );
+            constexpr double third = 1.0 / 3.0;
+            add( 0, dst, pair * third + weighted( 2 ) * third );
+         }
+         else
+            for ( int c = 0; c < channels; ++c )
+               add( c, dst, weighted( c ) );
       }
 }
 

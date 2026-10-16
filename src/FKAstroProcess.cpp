@@ -447,7 +447,7 @@ static fka::fkv3::ArcsinhNormalizer FitFKv3( const pcl::ImageVariant& image, boo
 
 template <class P>
 static void WriteFKv3T( pcl::GenericImage<P>& img, const fka::fkv3::ArcsinhNormalizer& state,
-                      const std::vector<std::vector<double>>& modelAcc, bool replicate )
+                      const std::vector<std::vector<double>>& modelAcc )
 {
    using sample = typename P::sample;
    const size_t plane = size_t( img.Width() ) * img.Height();
@@ -457,12 +457,6 @@ static void WriteFKv3T( pcl::GenericImage<P>& img, const fka::fkv3::ArcsinhNorma
       for ( size_t i = 0; i < plane; ++i )
       {
          double value = modelAcc[size_t( c )][i];
-         if ( replicate )
-         {
-            value = 0;
-            for ( const auto& channel : modelAcc ) value += channel[i];
-            value /= modelAcc.size();
-         }
          value = std::clamp( state.Inverse( value ), 0.0, 1.0 );
          dst[i] = fka::fkv3::SampleFromDouble<sample>( value );
       }
@@ -864,7 +858,8 @@ struct RunConfig
    int                marginX = 0, marginY = 0;
    int                stepX = 0, stepY = 0;      // stride in image domain
    int                outTileW = 0, outTileH = 0;
-   // CFA (raw Bayer) input: per-tile demosaic -> RGB, re-mosaic on write.
+   // Legacy CFA path: per-tile demosaic -> RGB, re-mosaic on write.
+   // FKv3 treats the original CFA plane as ordinary mono pixels.
    bool               isCFA = false;
    int                cfaMap[2][2] = { { 0, 1 }, { 1, 2 } }; // channel per site (x&1, y&1)
    // scaled geometry (out > in)
@@ -992,7 +987,7 @@ public:
             {
                std::lock_guard<std::mutex> guard( m_data.fusionMutex );
                if ( normalizer->scheme == FKNormalizer::FKv3 )
-                  fka::fkv3::BlendTile( outBuf.data(), C.outS.c, outTW, outTH,
+                  fka::fkv3::BlendTile( outBuf.data(), C.outS.c, N, outTW, outTH,
                      x, y, W, H, (*m_data.xWindows)[size_t( r % nx )],
                      (*m_data.yWindows)[size_t( r / nx )],
                      [&]( int c, size_t i, double value ) { (*m_data.modelAcc)[size_t( c )][i] += value; } );
@@ -1087,7 +1082,9 @@ void RunPipeline( pcl::GenericImage<P>& img, const RunConfig& C )
    {
       // Match the host's double model-space sum, with one inverse after
       // fusion. The seam windows define the sum; do not divide by wsum.
-      modelAcc.assign( size_t( C.outS.c ), std::vector<double>( plane, 0.0 ) );
+      // The sink matches the image's channels; mono tiles are reduced
+      // before accumulation, not after fusing three full-image planes.
+      modelAcc.assign( size_t( N ), std::vector<double>( plane, 0.0 ) );
       const fka::fkv3::AxisGrid gx( W, outTW, C.tileOverlap ), gy( H, outTH, C.tileOverlap );
       xs = gx.origins;
       ys = gy.origins;
@@ -1270,7 +1267,7 @@ void RunPipeline( pcl::GenericImage<P>& img, const RunConfig& C )
 
    // 3. Write results back.
    if ( fkv3 )
-      WriteFKv3T( img, C.normalizer.fkv3, modelAcc, C.replicate );
+      WriteFKv3T( img, C.normalizer.fkv3, modelAcc );
    else if ( !C.upscale && C.isCFA )
    {
       // Re-mosaic: keep the raw Bayer structure, sample the channel that
@@ -1578,9 +1575,6 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
            || !engine.HasParamsInput() || engine.ParamsSize() != 6 )
          throw pcl::Error( "fk-astro: FKv3 requires 1024x1024x3 input, "
                            "512x512x3 output and exactly 6 parameters." );
-      const int cfa = view.Window().FileInfo().cfaType;
-      if ( cfa >= pcl::CFAType::BGGR && cfa <= pcl::CFAType::RGGB )
-         throw pcl::Error( "fk-astro: debayer the CFA image before using FKv3." );
       C.normalizer.scheme = FKNormalizer::FKv3;
       C.normalizer.fkv3 = FitFKv3( image, effective.lunar );
       C.reflectPad = false; // ML5 catalog: reflectionPad=false
@@ -1700,9 +1694,10 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
    }
 
    // ---- channel mapping ----
-   // ---- CFA (raw Bayer) detection ----
+   // FKv3 follows the host's ordinary channel mapping even for raw CFA.
+   // Only legacy schemes demosaic/re-mosaic or reject specific CFA types.
    const int cfaType = view.Window().FileInfo().cfaType;
-   C.isCFA = ( cfaType >= pcl::CFAType::BGGR && cfaType <= pcl::CFAType::RGGB );
+   C.isCFA = !fkv3 && ( cfaType >= pcl::CFAType::BGGR && cfaType <= pcl::CFAType::RGGB );
    if ( C.isCFA )
    {
       if ( C.upscale )
@@ -1728,7 +1723,7 @@ bool FKAstroInferenceInstance::ExecuteOn( pcl::View& view )
    }
    else
    {
-      if ( cfaType == pcl::CFAType::CYGM )
+      if ( !fkv3 && cfaType == pcl::CFAType::CYGM )
          throw pcl::Error( "fk-astro: CYGM CFA images are not supported." );
       C.monoModel = ( inS.c == 1 && C.N > 1 );     // mono model: per-channel passes
       C.replicate = ( inS.c > 1 && C.N == 1 );     // color model on mono image

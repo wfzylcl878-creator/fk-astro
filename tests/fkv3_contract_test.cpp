@@ -40,7 +40,7 @@ static void ReaderRoundtrip( int width, int height, int channels )
    FKImageReaderT<TestFloat> reader( image );
    reader.normalizer = &norm;
    AxisGrid gx( width, 512, 0.2 ), gy( height, 512, 0.2 );
-   std::vector<std::vector<double>> acc( 3, std::vector<double>( size_t( width )*height, 0 ) );
+   std::vector<std::vector<double>> acc( size_t( channels ), std::vector<double>( size_t( width )*height, 0 ) );
    std::vector<float> input( 3*1024*1024 ), output( 3*512*512 );
    for ( size_t j = 0; j < gy.origins.size(); ++j )
       for ( size_t i = 0; i < gx.origins.size(); ++i )
@@ -52,11 +52,11 @@ static void ReaderRoundtrip( int width, int height, int channels )
             for ( int py = 0; py < 512; ++py )
                for ( int px = 0; px < 512; ++px )
                   output[size_t( c )*512*512+size_t( py )*512+px] = input[size_t( c )*1024*1024+size_t( py+256 )*1024+px+256];
-         BlendTile( output.data(), 3, 512, 512, x, y, width, height, gx.Window( i ), gy.Window( j ),
+         BlendTile( output.data(), 3, channels, 512, 512, x, y, width, height, gx.Window( i ), gy.Window( j ),
             [&]( int c, size_t pixel, double value ) { acc[size_t( c )][pixel] += value; } );
       }
    const auto original = image.pixels;
-   WriteFKv3T( image, norm.fkv3, acc, channels == 1 );
+   WriteFKv3T( image, norm.fkv3, acc );
    for ( int c = 0; c < channels; ++c )
       for ( size_t i = 0; i < size_t( width )*height; ++i )
          Near( image.pixels[size_t( c )*width*height+i], original[size_t( c )*width*height+i], 8e-8,
@@ -150,7 +150,7 @@ int main()
          Near(SampleToDouble(uint16_t(12345)),12345.0/65535.0,1e-16,"integer conversion in double");
          pcl::GenericImage<TestUInt16> integer(1,1,1); integer.pixels[0]=12345;
          const auto state=FitFKv3T(integer,false);
-         WriteFKv3T(integer,state,std::vector<std::vector<double>>(3,std::vector<double>(1,0)),true);
+         WriteFKv3T(integer,state,std::vector<std::vector<double>>(1,std::vector<double>(1,0)));
          Check(integer.pixels[0]==12345,"integer output must be scaled and rounded");
          Check(SampleFromDouble<uint8_t>(.5/255)==0 && SampleFromDouble<uint8_t>(1.5/255)==2
                && SampleFromDouble<uint8_t>(2.5/255)==2,"integer half ties round to even");
@@ -201,11 +201,57 @@ int main()
       run( "model-domain sum before inverse, no weight division", []
       {
          double acc=0; const float a=.4f,b=.6f;
-         BlendTile(&a,1,1,1,0,0,1,1,{.2},{1},[&](int,size_t,double v){acc+=v;});
-         BlendTile(&b,1,1,1,0,0,1,1,{.3},{1},[&](int,size_t,double v){acc+=v;});
+         BlendTile(&a,1,1,1,1,0,0,1,1,{.2},{1},[&](int,size_t,double v){acc+=v;});
+         BlendTile(&b,1,1,1,1,0,0,1,1,{.3},{1},[&](int,size_t,double v){acc+=v;});
          Near(acc,double(a)*.2+double(b)*.3,1e-16,"raw weighted sum");
          auto n=Fit(4,4,1,false,[](int,int y,int x){return .003+.001*(x+y);});
          Check(std::fabs(n.Inverse(acc)-(.2*n.Inverse(a)+.3*n.Inverse(b)))>1e-5,"per-tile inverse is not equivalent");
+      } );
+      run( "unequal mono outputs reduced per tile before inverse", []
+      {
+         // Independent scalar fixture from the recovered sink expression:
+         // addWeighted(R+G, 1/3, B, 1/3, 0), then add to a mono image.
+         const float outputs[4][3] = {
+            {.07979197800159454f, .23279088735580444f, .10100142657756805f},
+            {.27797359228134155f, .6356844305992126f, .36483219265937805f},
+            {.37018096446990967f, .2095070332288742f, .26697781682014465f},
+            {.9366545677185059f, .6480354070663452f, .6091309785842896f}
+         };
+         const double wx[4] = {.22789827565154686, .7721017243484531, .22789827565154686, .7721017243484531};
+         const double wy[4] = {.28938796360210717, .28938796360210717, .7106120363978928, .7106120363978928};
+         std::vector<std::vector<double>> acc( 1, std::vector<double>( 1, 0 ) );
+         int writes = 0;
+         for ( int t = 0; t < 4; ++t )
+            BlendTile( outputs[t], 3, 1, 1, 1, 0, 0, 1, 1, {wx[t]}, {wy[t]},
+               [&]( int c, size_t pixel, double value )
+               {
+                  Check( c == 0 && pixel == 0, "mono sink must receive only channel zero" );
+                  ++writes; acc[0][0] += value;
+               } );
+         Check( writes == 4, "reduce each tile before its single mono accumulation" );
+         Near( acc[0][0], .5512419161912594, 0, "recovered sink grouping and double accumulation" );
+         auto n = Fit(4,4,1,false,[](int,int y,int x){return .003+.001*(x+y);});
+         pcl::GenericImage<TestDouble> image(1,1,1);
+         WriteFKv3T(image,n,acc);
+         Near(image.pixels[0],n.Inverse(.5512419161912594),1e-15,"inverse after mono fusion");
+      } );
+      run( "raw CFA plane uses mono replication without interpolation", []
+      {
+         // Distinct RGGB sites must stay at their original coordinates.
+         pcl::GenericImage<TestFloat> image(2,2,1);
+         image.pixels = {.02f,.10f,.20f,.80f};
+         FKNormalizer norm; norm.scheme = FKNormalizer::FKv3; norm.fkv3 = FitFKv3T(image,false);
+         FKImageReaderT<TestFloat> reader(image); reader.normalizer = &norm;
+         std::vector<float> input(3*4*4);
+         reader.ReadTile(input.data(),0,-1,-1,fka::TensorShape{3,4,4},false,true);
+         for ( int c = 0; c < 3; ++c )
+            for ( int y = 0; y < 4; ++y )
+               for ( int x = 0; x < 4; ++x )
+               {
+                  const bool inside = x >= 1 && x <= 2 && y >= 1 && y <= 2;
+                  const float expected = inside ? float(norm.fkv3.Forward(double(image.pixels[size_t(y-1)*2+x-1]))) : 0;
+                  Near(input[size_t(c)*16+size_t(y)*4+x],expected,0,"same raw site in all channels, model-zero padding");
+               }
       } );
       run( "small RGB center-copy pipeline", [] { ReaderRoundtrip(317,241,3); } );
       run( "small mono center-copy pipeline", [] { ReaderRoundtrip(317,241,1); } );
