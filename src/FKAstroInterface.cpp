@@ -22,6 +22,31 @@ static int SchemeComboValue( int index )
 }
 
 // ---------------------------------------------------------------------------
+// Parameter row layout helpers
+// ---------------------------------------------------------------------------
+
+// Right-aligned, vertically centered labels with one shared fixed width put
+// every value box / combo in the same column (standard PixInsight layout).
+static void AlignParameterLabel( pcl::Label& label, int labelWidth )
+{
+   label.SetTextAlignment( pcl::TextAlign::Right | pcl::TextAlign::VertCenter );
+   label.SetFixedWidth( labelWidth );
+}
+
+// Numeric rows additionally get a fine-grained slider to the right of the
+// edit box and one shared edit width (auto width is per-range, which makes
+// e.g. the -0.5..0.5 halo control wider than the positive-only ones).
+static void StyleNumericControl( pcl::NumericControl& nc, int labelWidth )
+{
+   AlignParameterLabel( nc.label, labelWidth );
+   nc.DisableAutoAdjustEditWidth();
+   nc.edit.SetFixedWidth( nc.edit.Font().Width( "-8.88" )
+                        + nc.LogicalPixelsToPhysical( 10 ) );
+   nc.slider.SetRange( 0, 1000 );
+   nc.slider.SetScaledMinWidth( 240 );
+}
+
+// ---------------------------------------------------------------------------
 // Deferred GUI initialization
 // ---------------------------------------------------------------------------
 
@@ -35,6 +60,11 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
    {
       GUI = new GUIData;
 
+      // Shared label width: all parameter labels get one fixed width so the
+      // value boxes line up in a single column.
+      const int labelWidth = Font().Width( "Sharpen nonstellar:" )
+                           + LogicalPixelsToPhysical( 8 );
+
       // ---------------------------------------------------------------
       // Model
       // ---------------------------------------------------------------
@@ -44,6 +74,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       GUI->ModelBar.SetSection( GUI->ModelSection );
 
       GUI->ModelPathLabel.SetText( "Model path:" );
+      AlignParameterLabel( GUI->ModelPathLabel, labelWidth );
       GUI->ModelPathEdit.SetToolTip(
          "<p>Path to your CoreML model (.mlpackage / .mlmodel). It must "
          "expose a fixed-shape 3-D float32 multi-array input and output; "
@@ -80,6 +111,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       GUI->StellarBar.SetSection( GUI->StellarSection );
 
       GUI->SharpenStars.label.SetText( "Sharpen stars:" );
+      StyleNumericControl( GUI->SharpenStars, labelWidth );
       GUI->SharpenStars.SetRange( 0.0, 0.7 );
       GUI->SharpenStars.SetPrecision( 2 );
       GUI->SharpenStars.SetValue( m_sharpenStars );
@@ -89,6 +121,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_SharpenStars, *this );
 
       GUI->AdjustStarHalos.label.SetText( "Adjust star halos:" );
+      StyleNumericControl( GUI->AdjustStarHalos, labelWidth );
       GUI->AdjustStarHalos.SetRange( -0.5, 0.5 );
       GUI->AdjustStarHalos.SetPrecision( 2 );
       GUI->AdjustStarHalos.SetValue( m_adjustStarHalos );
@@ -113,6 +146,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       GUI->NonstellarBar.SetSection( GUI->NonstellarSection );
 
       GUI->SharpenNonstellar.label.SetText( "Sharpen nonstellar:" );
+      StyleNumericControl( GUI->SharpenNonstellar, labelWidth );
       GUI->SharpenNonstellar.SetRange( 0.0, 1.0 );
       GUI->SharpenNonstellar.SetPrecision( 2 );
       GUI->SharpenNonstellar.SetValue( m_sharpenNonstellar );
@@ -132,6 +166,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
          (pcl::Button::check_event_handler)&FKAstroInterface::e_AutoPSF, *this );
 
       GUI->PSFDiameter.label.SetText( "PSF diameter (px):" );
+      StyleNumericControl( GUI->PSFDiameter, labelWidth );
       GUI->PSFDiameter.SetRange( 0.0, 8.0 );
       GUI->PSFDiameter.SetPrecision( 2 );
       GUI->PSFDiameter.SetValue( m_psfDiameter );
@@ -145,9 +180,9 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
 
       GUI->NonstellarSizer.SetMargin( 4 );
       GUI->NonstellarSizer.SetSpacing( 4 );
-      GUI->NonstellarSizer.Add( GUI->SharpenNonstellar );
       GUI->NonstellarSizer.Add( GUI->AutoPSFCheck );
       GUI->NonstellarSizer.Add( GUI->PSFDiameter );
+      GUI->NonstellarSizer.Add( GUI->SharpenNonstellar );
       GUI->NonstellarSection.SetSizer( GUI->NonstellarSizer );
 
       // ---------------------------------------------------------------
@@ -177,6 +212,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
          (pcl::Button::check_event_handler)&FKAstroInterface::e_LunarPlanetary, *this );
 
       GUI->NormLabel.SetText( "Processing scheme:" );
+      AlignParameterLabel( GUI->NormLabel, labelWidth );
       GUI->NormCombo.AddItem( "None" );
       GUI->NormCombo.AddItem( "FKv2" );
       GUI->NormCombo.AddItem( "FKv3" );
@@ -221,6 +257,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       GUI->AdditionalBar.SetSection( GUI->AdditionalSection );
 
       GUI->TileOverlap.label.SetText( "Tile overlap:" );
+      StyleNumericControl( GUI->TileOverlap, labelWidth );
       GUI->TileOverlap.SetRange( 0.0, 0.5 );
       GUI->TileOverlap.SetPrecision( 2 );
       GUI->TileOverlap.SetValue( m_tileOverlap );
@@ -240,6 +277,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
          (pcl::Button::check_event_handler)&FKAstroInterface::e_ReflectPad, *this );
 
       GUI->DeviceLabel.SetText( "Compute device:" );
+      AlignParameterLabel( GUI->DeviceLabel, labelWidth );
       GUI->DeviceCombo.AddItem( "Automatic (GPU)" );
       GUI->DeviceCombo.AddItem( "GPU" );
       GUI->DeviceCombo.AddItem( "CPU" );
@@ -258,10 +296,10 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
 
       GUI->AdditionalSizer.SetMargin( 4 );
       GUI->AdditionalSizer.SetSpacing( 4 );
-      GUI->AdditionalSizer.Add( GUI->TileOverlap );
       GUI->AdditionalSizer.Add( GUI->ReflectPadCheck );
-      GUI->AdditionalSizer.Add( GUI->DeviceSizer );
       GUI->AdditionalSizer.Add( GUI->VerboseCheck );
+      GUI->AdditionalSizer.Add( GUI->TileOverlap );
+      GUI->AdditionalSizer.Add( GUI->DeviceSizer );
       GUI->AdditionalSection.SetSizer( GUI->AdditionalSizer );
 
       // ---------------------------------------------------------------
@@ -282,6 +320,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
 
       SetSizer( GUI->VSizer );
       AdjustToContents();
+      SetFixedWidth();   // pin the full-expanded width; section toggles then only change height
       UpdateEnabledStates();
    }
 
