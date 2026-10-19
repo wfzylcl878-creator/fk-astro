@@ -27,7 +27,9 @@ fk-astro/
 │   ├── FKCurves.h        FKv2 标定曲线库(5 组 × 498 节点,BXT ML5 运行时采集)
 │   ├── FKAstroInterface.h   自定义界面定义(五区分组)
 │   ├── FKAstroInterface.cpp 界面实现(Options 区含处理方案下拉)
+│   ├── FKTranslation.h/.mm  XLIFF 界面本地化加载器
 │   └── FKAstroModule.cpp 模块入口(MetaModule + InstallPixInsightModule)
+├── translations/         XLIFF 界面语言包(当前 zh-CN)
 ├── build/                编译中间产物(按架构分子目录)
 └── dist/FKAstro-pxm.dylib  ← 最终模块
 ```
@@ -78,6 +80,13 @@ sudo cp dist/FKAstro-pxm.dylib dist/FKAstro-pxm.xsgn /Applications/PixInsight/bi
 进程名 **FKAstroInference**(分类 Preprocessing / FKAstro),自定义界面分五区:
 Model / Stellar Adjustments / Nonstellar Adjustments / Options /
 Additional Options。
+
+界面文本(分区标题、标签、复选框、悬浮说明)支持 XLIFF 本地化:源码内为英文,
+翻译放在 `translations/<lang>.xliff`,安装时拷贝到模块旁的
+`FKAstro-translations/`。PixInsight/PCL 不向模块开放官方本地化 API,
+加载逻辑由 `src/FKTranslation.mm` 自行实现。语言按 macOS 系统首选语言自动选择
+(`zh*` 加载 zh-CN),也可用环境变量 `FKASTRO_LANG=zh-CN` 强制指定;
+无匹配语言包时回退英文。方案名(None/FKv2/FKv3)与 GPU/CPU 保持不译。
 
 | 参数 | 默认 | 说明 |
 |---|---|---|

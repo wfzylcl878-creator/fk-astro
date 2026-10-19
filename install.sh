@@ -38,6 +38,11 @@ echo "== Signing module"
 echo "== Copying to $PI/bin (sudo)"
 sudo cp "$MOD" "${MOD:r}.xsgn" "$PI/bin/"
 
+# Interface translations (XLIFF), loaded from FKAstro-translations/<lang>.xliff
+# next to the module dylib.
+sudo rm -rf "$PI/bin/FKAstro-translations"
+[[ -d $DIR/translations ]] && sudo cp -R "$DIR/translations" "$PI/bin/FKAstro-translations"
+
 echo "== Launching PixInsight with the module"
 open -a "$PI/PixInsight.app" --args -m="$PI/bin/FKAstro-pxm.dylib"
 echo "Done. Look for Process > Preprocessing > FKAstro > FKAstroInference."

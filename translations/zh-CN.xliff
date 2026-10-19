@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- fk-astro interface translations (Simplified Chinese).
+     Keys are the exact English source strings used in FKAstroInterface.cpp;
+     loaded at GUI creation, see src/FKTranslation.mm. Scheme names (None /
+     FKv2 / FKv3) and GPU / CPU are kept untranslated on purpose: they are
+     identifiers used by the documentation. -->
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="FKAstroInterface" source-language="en" target-language="zh-CN" datatype="plaintext">
+    <body>
+
+      <!-- Section bars -->
+      <trans-unit id="section.model">
+        <source>Model</source>
+        <target>模型</target>
+      </trans-unit>
+      <trans-unit id="section.stellar">
+        <source>Stellar Adjustments</source>
+        <target>恒星调整</target>
+      </trans-unit>
+      <trans-unit id="section.nonstellar">
+        <source>Nonstellar Adjustments</source>
+        <target>非恒星调整</target>
+      </trans-unit>
+      <trans-unit id="section.options">
+        <source>Options</source>
+        <target>选项</target>
+      </trans-unit>
+      <trans-unit id="section.additional">
+        <source>Additional Options</source>
+        <target>附加选项</target>
+      </trans-unit>
+
+      <!-- Labels and buttons -->
+      <trans-unit id="label.modelPath">
+        <source>Model path:</source>
+        <target>模型路径:</target>
+      </trans-unit>
+      <trans-unit id="label.sharpenStars">
+        <source>Sharpen stars:</source>
+        <target>恒星锐化:</target>
+      </trans-unit>
+      <trans-unit id="label.adjustStarHalos">
+        <source>Adjust star halos:</source>
+        <target>恒星光晕调整:</target>
+      </trans-unit>
+      <trans-unit id="label.sharpenNonstellar">
+        <source>Sharpen nonstellar:</source>
+        <target>非恒星锐化:</target>
+      </trans-unit>
+      <trans-unit id="label.psfDiameter">
+        <source>PSF diameter (px):</source>
+        <target>PSF 直径(px):</target>
+      </trans-unit>
+      <trans-unit id="label.processingScheme">
+        <source>Processing scheme:</source>
+        <target>处理方案:</target>
+      </trans-unit>
+      <trans-unit id="label.tileOverlap">
+        <source>Tile overlap:</source>
+        <target>分块重叠:</target>
+      </trans-unit>
+      <trans-unit id="label.computeDevice">
+        <source>Compute device:</source>
+        <target>计算设备:</target>
+      </trans-unit>
+      <trans-unit id="check.automaticPSF">
+        <source>Automatic PSF</source>
+        <target>自动 PSF</target>
+      </trans-unit>
+      <trans-unit id="check.correctOnly">
+        <source>Correct only</source>
+        <target>仅校正</target>
+      </trans-unit>
+      <trans-unit id="check.lunarPlanetary">
+        <source>Lunar/Planetary</source>
+        <target>月球/行星</target>
+      </trans-unit>
+      <trans-unit id="check.reflectPad">
+        <source>Reflect border padding</source>
+        <target>边界镜像填充</target>
+      </trans-unit>
+      <trans-unit id="check.verbose">
+        <source>Verbose console output</source>
+        <target>详细控制台输出</target>
+      </trans-unit>
+      <trans-unit id="combo.deviceAuto">
+        <source>Automatic (GPU)</source>
+        <target>自动(GPU)</target>
+      </trans-unit>
+
+      <!-- Tooltips -->
+      <trans-unit id="tip.modelPath">
+        <source>&lt;p&gt;Path to your CoreML model (.mlpackage / .mlmodel). It must expose a fixed-shape 3-D float32 multi-array input and output; an additional parameters tensor is used automatically when present.&lt;/p&gt;</source>
+        <target>&lt;p&gt;CoreML 模型路径(.mlpackage / .mlmodel)。必须提供固定形状的三维 float32 multi-array 输入和输出;若模型带有附加 parameters 张量则会自动使用。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.browse">
+        <source>&lt;p&gt;Browse for a CoreML model file.&lt;/p&gt;</source>
+        <target>&lt;p&gt;浏览选择 CoreML 模型文件。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.sharpenStars">
+        <source>&lt;p&gt;Star sharpening strength. Range 0.0 - 0.7, default 0.5.&lt;/p&gt;</source>
+        <target>&lt;p&gt;恒星锐化强度。范围 0.0 - 0.7,默认 0.5。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.adjustStarHalos">
+        <source>&lt;p&gt;Star halo correction. Range -0.5 - +0.5, default 0 (negative suppresses halos, positive brightens them).&lt;/p&gt;</source>
+        <target>&lt;p&gt;恒星光晕校正。范围 -0.5 - +0.5,默认 0(负值抑制光晕,正值增亮光晕)。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.sharpenNonstellar">
+        <source>&lt;p&gt;Detail sharpening strength for nonstellar structures (galaxies, nebulae). Range 0.0 - 1.0, default 0.5.&lt;/p&gt;</source>
+        <target>&lt;p&gt;非恒星结构(星系、星云)的细节锐化强度。范围 0.0 - 1.0,默认 0.5。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.automaticPSF">
+        <source>&lt;p&gt;When enabled, the model estimates the PSF (point spread function) automatically; the manual diameter control is disabled. Uncheck to specify a fixed PSF diameter.&lt;/p&gt;</source>
+        <target>&lt;p&gt;勾选时由模型自动估计 PSF(点扩散函数),手动直径控件被禁用;取消勾选可指定固定 PSF 直径。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.psfDiameter">
+        <source>&lt;p&gt;Fixed PSF diameter in pixels for nonstellar structures. Only used when Automatic PSF is disabled. Range 0.0 - 8.0, default 0.0.&lt;/p&gt;</source>
+        <target>&lt;p&gt;非恒星结构的固定 PSF 直径(像素)。仅在关闭自动 PSF 时使用。范围 0.0 - 8.0,默认 0.0。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.correctOnly">
+        <source>&lt;p&gt;When enabled, the model is asked to only correct the PSF (no additional sharpening); when disabled, the sharpening controls apply.&lt;/p&gt;</source>
+        <target>&lt;p&gt;勾选时仅要求模型校正 PSF(不做额外锐化);取消勾选后各锐化控制生效。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.lunarPlanetary">
+        <source>&lt;p&gt;With FKv3, use the lunar/planetary normalization and a manual PSF diameter. Stellar adjustments and Automatic PSF are disabled. Correct Only overrides this mode.&lt;/p&gt;</source>
+        <target>&lt;p&gt;FKv3 下使用月球/行星归一化与手动 PSF 直径;恒星调整和自动 PSF 被禁用。仅校正模式优先于此选项。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.normScheme">
+        <source>&lt;p&gt;&lt;b&gt;None&lt;/b&gt; - pixels are passed to the model unchanged and the parameters vector carries the five user slots (sharpen stars, star halos, PSF diameter, automatic PSF, sharpen nonstellar).&lt;/p&gt;&lt;p&gt;&lt;b&gt;FKv2&lt;/b&gt; (legacy calibration) - the background statistic bg is measured once per image (P35 quantile) and the forward/inverse transforms use calibrated monotone curves captured at runtime from the ML5 model inputs (FKCurves.h): the curve whose bg is closest in log space is selected and evaluated with monotone PCHIP interpolation, with the inverse saturating at the curve endpoints. Out-of-range window pixels are zero-filled.&lt;/p&gt;&lt;p&gt;&lt;b&gt;FKv3&lt;/b&gt; (default, recovered ML5 host flow) - fit an arcsinh transform to the whole image with white point 1. The sixth parameter uses the gain of this same transform. Tiles use zero padding and are blended before the inverse transform. Requires 1024x1024x3 input, 512x512x3 output and six parameters.&lt;/p&gt;</source>
+        <target>&lt;p&gt;&lt;b&gt;None&lt;/b&gt; - 像素直通模型,参数向量只含 5 个用户槽位(恒星锐化、恒星光晕、PSF 直径、自动 PSF、非恒星锐化)。&lt;/p&gt;&lt;p&gt;&lt;b&gt;FKv2&lt;/b&gt;(旧标定方案)- 每图测一次背景统计量 bg(P35 分位数),正/逆变换使用从 ML5 模型运行时输入采集的标定单调曲线(FKCurves.h):按 log(bg) 最近邻选择曲线并用 PCHIP 单调插值求值,逆变换在端点饱和钳位。越界窗口像素填零。&lt;/p&gt;&lt;p&gt;&lt;b&gt;FKv3&lt;/b&gt;(默认,恢复的官方 ML5 宿主流程)- 对整图拟合白点为 1 的 arcsinh 变换,第 6 个参数使用同一变换的增益;分块零填充,全部融合后再逆变换。要求 1024x1024x3 输入、512x512x3 输出和 6 个参数。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.tileOverlap">
+        <source>&lt;p&gt;Overlap fraction, range 0.0 - 0.5, default 0.2. FKv3 uses this value for both the tile count and cosine transition width.&lt;/p&gt;</source>
+        <target>&lt;p&gt;重叠比例,范围 0.0 - 0.5,默认 0.2。FKv3 同时用该值计算分块数量和余弦过渡带宽度。&lt;/p&gt;</target>
+      </trans-unit>
+      <trans-unit id="tip.reflectPad">
+        <source>&lt;p&gt;Mirror the image at borders when a tile window extends past the edge. Unchecked: replicate edge pixels. FKv3 always uses zero padding.&lt;/p&gt;</source>
+        <target>&lt;p&gt;分块窗口越出图像边缘时按镜像取样;取消勾选则复制边缘像素。FKv3 固定使用零填充。&lt;/p&gt;</target>
+      </trans-unit>
+
+    </body>
+  </file>
+</xliff>

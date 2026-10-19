@@ -1,10 +1,13 @@
 /*
- * fk-astro — FKAstroInference process interface implementation
+ * fk-astro -FKAstroInference process interface implementation
  */
 
 #include "FKAstroInterface.h"
 #include "FKAstroProcess.h"
+#include "FKTranslation.h"
 #include <pcl/FileDialog.h>
+
+#include <algorithm>
 
 FKAstroInterface* TheFKAstroInterface = nullptr;
 
@@ -60,31 +63,41 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
    {
       GUI = new GUIData;
 
+      fka::LoadTranslations();
+
       // Shared label width: all parameter labels get one fixed width so the
       // value boxes line up in a single column.
-      const int labelWidth = Font().Width( "Sharpen nonstellar:" )
+      auto labelWidthOf = [this]( const char* s )
+      {
+         return Font().Width( fka::Tr( s ) );
+      };
+      const int labelWidth = std::max( { labelWidthOf( "Sharpen nonstellar:" ),
+                                         labelWidthOf( "Processing scheme:" ),
+                                         labelWidthOf( "PSF diameter (px):" ),
+                                         labelWidthOf( "Compute device:" ),
+                                         labelWidthOf( "Model path:" ) } )
                            + LogicalPixelsToPhysical( 8 );
 
       // ---------------------------------------------------------------
       // Model
       // ---------------------------------------------------------------
-      GUI->ModelBar.SetTitle( "Model" );
+      GUI->ModelBar.SetTitle( fka::Tr( "Model" ) );
       GUI->ModelBar.OnToggleSection(
          (pcl::SectionBar::section_event_handler)&FKAstroInterface::e_Section, *this );
       GUI->ModelBar.SetSection( GUI->ModelSection );
 
-      GUI->ModelPathLabel.SetText( "Model path:" );
+      GUI->ModelPathLabel.SetText( fka::Tr( "Model path:" ) );
       AlignParameterLabel( GUI->ModelPathLabel, labelWidth );
       GUI->ModelPathEdit.SetToolTip(
-         "<p>Path to your CoreML model (.mlpackage / .mlmodel). It must "
-         "expose a fixed-shape 3-D float32 multi-array input and output; "
-         "an additional parameters tensor is used automatically when "
-         "present.</p>" );
+         fka::Tr( "<p>Path to your CoreML model (.mlpackage / .mlmodel). It must "
+                  "expose a fixed-shape 3-D float32 multi-array input and output; "
+                  "an additional parameters tensor is used automatically when "
+                  "present.</p>" ) );
       GUI->ModelPathEdit.OnEditCompleted(
          (pcl::Edit::edit_event_handler)&FKAstroInterface::e_EditCompleted, *this );
 
-      GUI->BrowseButton.SetText( " ..." );
-      GUI->BrowseButton.SetToolTip( "<p>Browse for a CoreML model file.</p>" );
+      GUI->BrowseButton.SetText( fka::Tr( " ..." ) );
+      GUI->BrowseButton.SetToolTip( fka::Tr( "<p>Browse for a CoreML model file.</p>" ) );
       GUI->BrowseButton.OnClick(
          (pcl::Button::click_event_handler)&FKAstroInterface::e_BrowseClicked, *this );
 
@@ -105,29 +118,29 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       // ---------------------------------------------------------------
       // Stellar Adjustments
       // ---------------------------------------------------------------
-      GUI->StellarBar.SetTitle( "Stellar Adjustments" );
+      GUI->StellarBar.SetTitle( fka::Tr( "Stellar Adjustments" ) );
       GUI->StellarBar.OnToggleSection(
          (pcl::SectionBar::section_event_handler)&FKAstroInterface::e_Section, *this );
       GUI->StellarBar.SetSection( GUI->StellarSection );
 
-      GUI->SharpenStars.label.SetText( "Sharpen stars:" );
+      GUI->SharpenStars.label.SetText( fka::Tr( "Sharpen stars:" ) );
       StyleNumericControl( GUI->SharpenStars, labelWidth );
       GUI->SharpenStars.SetRange( 0.0, 0.7 );
       GUI->SharpenStars.SetPrecision( 2 );
       GUI->SharpenStars.SetValue( m_sharpenStars );
       GUI->SharpenStars.SetToolTip(
-         "<p>Star sharpening strength. Range 0.0 – 0.7, default 0.5.</p>" );
+         fka::Tr( "<p>Star sharpening strength. Range 0.0 - 0.7, default 0.5.</p>" ) );
       GUI->SharpenStars.OnValueUpdated(
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_SharpenStars, *this );
 
-      GUI->AdjustStarHalos.label.SetText( "Adjust star halos:" );
+      GUI->AdjustStarHalos.label.SetText( fka::Tr( "Adjust star halos:" ) );
       StyleNumericControl( GUI->AdjustStarHalos, labelWidth );
       GUI->AdjustStarHalos.SetRange( -0.5, 0.5 );
       GUI->AdjustStarHalos.SetPrecision( 2 );
       GUI->AdjustStarHalos.SetValue( m_adjustStarHalos );
       GUI->AdjustStarHalos.SetToolTip(
-         "<p>Star halo correction. Range -0.5 – +0.5, default 0 "
-         "(negative suppresses halos, positive brightens them).</p>" );
+         fka::Tr( "<p>Star halo correction. Range -0.5 - +0.5, default 0 "
+                  "(negative suppresses halos, positive brightens them).</p>" ) );
       GUI->AdjustStarHalos.OnValueUpdated(
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_AdjustStarHalos, *this );
 
@@ -140,41 +153,41 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       // ---------------------------------------------------------------
       // Nonstellar Adjustments
       // ---------------------------------------------------------------
-      GUI->NonstellarBar.SetTitle( "Nonstellar Adjustments" );
+      GUI->NonstellarBar.SetTitle( fka::Tr( "Nonstellar Adjustments" ) );
       GUI->NonstellarBar.OnToggleSection(
          (pcl::SectionBar::section_event_handler)&FKAstroInterface::e_Section, *this );
       GUI->NonstellarBar.SetSection( GUI->NonstellarSection );
 
-      GUI->SharpenNonstellar.label.SetText( "Sharpen nonstellar:" );
+      GUI->SharpenNonstellar.label.SetText( fka::Tr( "Sharpen nonstellar:" ) );
       StyleNumericControl( GUI->SharpenNonstellar, labelWidth );
       GUI->SharpenNonstellar.SetRange( 0.0, 1.0 );
       GUI->SharpenNonstellar.SetPrecision( 2 );
       GUI->SharpenNonstellar.SetValue( m_sharpenNonstellar );
       GUI->SharpenNonstellar.SetToolTip(
-         "<p>Detail sharpening strength for nonstellar structures "
-         "(galaxies, nebulae). Range 0.0 – 1.0, default 0.5.</p>" );
+         fka::Tr( "<p>Detail sharpening strength for nonstellar structures "
+                  "(galaxies, nebulae). Range 0.0 - 1.0, default 0.5.</p>" ) );
       GUI->SharpenNonstellar.OnValueUpdated(
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_SharpenNonstellar, *this );
 
-      GUI->AutoPSFCheck.SetText( "Automatic PSF" );
+      GUI->AutoPSFCheck.SetText( fka::Tr( "Automatic PSF" ) );
       GUI->AutoPSFCheck.SetChecked( m_autoPSF );
       GUI->AutoPSFCheck.SetToolTip(
-         "<p>When enabled, the model estimates the PSF (point spread "
-         "function) automatically; the manual diameter control is "
-         "disabled. Uncheck to specify a fixed PSF diameter.</p>" );
+         fka::Tr( "<p>When enabled, the model estimates the PSF (point spread "
+                  "function) automatically; the manual diameter control is "
+                  "disabled. Uncheck to specify a fixed PSF diameter.</p>" ) );
       GUI->AutoPSFCheck.OnCheck(
          (pcl::Button::check_event_handler)&FKAstroInterface::e_AutoPSF, *this );
 
-      GUI->PSFDiameter.label.SetText( "PSF diameter (px):" );
+      GUI->PSFDiameter.label.SetText( fka::Tr( "PSF diameter (px):" ) );
       StyleNumericControl( GUI->PSFDiameter, labelWidth );
       GUI->PSFDiameter.SetRange( 0.0, 8.0 );
       GUI->PSFDiameter.SetPrecision( 2 );
       GUI->PSFDiameter.SetValue( m_psfDiameter );
       GUI->PSFDiameter.Enable( !m_autoPSF );
       GUI->PSFDiameter.SetToolTip(
-         "<p>Fixed PSF diameter in pixels for nonstellar structures. "
-         "Only used when Automatic PSF is disabled. Range 0.0 – 8.0, "
-         "default 0.0.</p>" );
+         fka::Tr( "<p>Fixed PSF diameter in pixels for nonstellar structures. "
+                  "Only used when Automatic PSF is disabled. Range 0.0 - 8.0, "
+                  "default 0.0.</p>" ) );
       GUI->PSFDiameter.OnValueUpdated(
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_PSFDiameter, *this );
 
@@ -188,52 +201,52 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       // ---------------------------------------------------------------
       // Options
       // ---------------------------------------------------------------
-      GUI->OptionsBar.SetTitle( "Options" );
+      GUI->OptionsBar.SetTitle( fka::Tr( "Options" ) );
       GUI->OptionsBar.OnToggleSection(
          (pcl::SectionBar::section_event_handler)&FKAstroInterface::e_Section, *this );
       GUI->OptionsBar.SetSection( GUI->OptionsSection );
 
-      GUI->CorrectOnlyCheck.SetText( "Correct only" );
+      GUI->CorrectOnlyCheck.SetText( fka::Tr( "Correct only" ) );
       GUI->CorrectOnlyCheck.SetChecked( m_correctOnly );
       GUI->CorrectOnlyCheck.SetToolTip(
-         "<p>When enabled, the model is asked to only correct the PSF "
-         "(no additional sharpening); when disabled, the sharpening "
-         "controls apply.</p>" );
+         fka::Tr( "<p>When enabled, the model is asked to only correct the PSF "
+                  "(no additional sharpening); when disabled, the sharpening "
+                  "controls apply.</p>" ) );
       GUI->CorrectOnlyCheck.OnCheck(
          (pcl::Button::check_event_handler)&FKAstroInterface::e_CorrectOnly, *this );
 
-      GUI->LunarPlanetaryCheck.SetText( "Lunar/Planetary" );
+      GUI->LunarPlanetaryCheck.SetText( fka::Tr( "Lunar/Planetary" ) );
       GUI->LunarPlanetaryCheck.SetChecked( m_lunarPlanetary );
       GUI->LunarPlanetaryCheck.SetToolTip(
-         "<p>With FKv3, use the lunar/planetary normalization and a manual "
-         "PSF diameter. Stellar adjustments and Automatic PSF are disabled. "
-         "Correct Only overrides this mode.</p>" );
+         fka::Tr( "<p>With FKv3, use the lunar/planetary normalization and a manual "
+                  "PSF diameter. Stellar adjustments and Automatic PSF are disabled. "
+                  "Correct Only overrides this mode.</p>" ) );
       GUI->LunarPlanetaryCheck.OnCheck(
          (pcl::Button::check_event_handler)&FKAstroInterface::e_LunarPlanetary, *this );
 
-      GUI->NormLabel.SetText( "Processing scheme:" );
+      GUI->NormLabel.SetText( fka::Tr( "Processing scheme:" ) );
       AlignParameterLabel( GUI->NormLabel, labelWidth );
-      GUI->NormCombo.AddItem( "None" );
-      GUI->NormCombo.AddItem( "FKv2" );
-      GUI->NormCombo.AddItem( "FKv3" );
+      GUI->NormCombo.AddItem( fka::Tr( "None" ) );
+      GUI->NormCombo.AddItem( fka::Tr( "FKv2" ) );
+      GUI->NormCombo.AddItem( fka::Tr( "FKv3" ) );
       GUI->NormCombo.SetCurrentItem( SchemeComboIndex( m_normScheme ) );
       GUI->NormCombo.SetToolTip(
-         "<p><b>None</b> — pixels are passed to the model unchanged and the "
-         "parameters vector carries the five user slots (sharpen stars, "
-         "star halos, PSF diameter, automatic PSF, sharpen nonstellar).</p>"
-         "<p><b>FKv2</b> (legacy calibration) — the background statistic bg "
-         "is measured once per image (P35 quantile) and the forward/inverse "
-         "transforms use calibrated monotone curves captured at runtime from "
-         "the ML5 model inputs (FKCurves.h): the curve whose bg is closest "
-         "in log space is selected and evaluated with monotone PCHIP "
-         "interpolation, with the inverse saturating at the curve endpoints. "
-         "Out-of-range window pixels are zero-filled.</p>"
-         "<p><b>FKv3</b> (default, recovered ML5 host flow) — fit an arcsinh "
-         "transform to the whole "
-         "image with white point 1. The sixth parameter uses the gain of "
-         "this same transform. Tiles use zero padding and are blended before "
-         "the inverse transform. Requires 1024x1024x3 input, 512x512x3 "
-         "output and six parameters.</p>" );
+         fka::Tr( "<p><b>None</b> - pixels are passed to the model unchanged and the "
+                  "parameters vector carries the five user slots (sharpen stars, "
+                  "star halos, PSF diameter, automatic PSF, sharpen nonstellar).</p>"
+                  "<p><b>FKv2</b> (legacy calibration) - the background statistic bg "
+                  "is measured once per image (P35 quantile) and the forward/inverse "
+                  "transforms use calibrated monotone curves captured at runtime from "
+                  "the ML5 model inputs (FKCurves.h): the curve whose bg is closest "
+                  "in log space is selected and evaluated with monotone PCHIP "
+                  "interpolation, with the inverse saturating at the curve endpoints. "
+                  "Out-of-range window pixels are zero-filled.</p>"
+                  "<p><b>FKv3</b> (default, recovered ML5 host flow) - fit an arcsinh "
+                  "transform to the whole "
+                  "image with white point 1. The sixth parameter uses the gain of "
+                  "this same transform. Tiles use zero padding and are blended before "
+                  "the inverse transform. Requires 1024x1024x3 input, 512x512x3 "
+                  "output and six parameters.</p>" ) );
       GUI->NormCombo.OnItemSelected(
          (pcl::ComboBox::item_event_handler)&FKAstroInterface::e_NormScheme, *this );
 
@@ -251,36 +264,36 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       // ---------------------------------------------------------------
       // Additional Options
       // ---------------------------------------------------------------
-      GUI->AdditionalBar.SetTitle( "Additional Options" );
+      GUI->AdditionalBar.SetTitle( fka::Tr( "Additional Options" ) );
       GUI->AdditionalBar.OnToggleSection(
          (pcl::SectionBar::section_event_handler)&FKAstroInterface::e_Section, *this );
       GUI->AdditionalBar.SetSection( GUI->AdditionalSection );
 
-      GUI->TileOverlap.label.SetText( "Tile overlap:" );
+      GUI->TileOverlap.label.SetText( fka::Tr( "Tile overlap:" ) );
       StyleNumericControl( GUI->TileOverlap, labelWidth );
       GUI->TileOverlap.SetRange( 0.0, 0.5 );
       GUI->TileOverlap.SetPrecision( 2 );
       GUI->TileOverlap.SetValue( m_tileOverlap );
       GUI->TileOverlap.SetToolTip(
-         "<p>Overlap fraction, range 0.0 – 0.5, default 0.2. FKv3 uses "
-         "this value for both the tile count and cosine transition width.</p>" );
+         fka::Tr( "<p>Overlap fraction, range 0.0 - 0.5, default 0.2. FKv3 uses "
+                  "this value for both the tile count and cosine transition width.</p>" ) );
       GUI->TileOverlap.OnValueUpdated(
          (pcl::NumericEdit::value_event_handler)&FKAstroInterface::e_Overlap, *this );
 
-      GUI->ReflectPadCheck.SetText( "Reflect border padding" );
+      GUI->ReflectPadCheck.SetText( fka::Tr( "Reflect border padding" ) );
       GUI->ReflectPadCheck.SetChecked( m_reflectPad );
       GUI->ReflectPadCheck.SetToolTip(
-         "<p>Mirror the image at borders when a tile window extends past "
-         "the edge. Unchecked: replicate edge pixels. FKv3 always uses "
-         "zero padding.</p>" );
+         fka::Tr( "<p>Mirror the image at borders when a tile window extends past "
+                  "the edge. Unchecked: replicate edge pixels. FKv3 always uses "
+                  "zero padding.</p>" ) );
       GUI->ReflectPadCheck.OnCheck(
          (pcl::Button::check_event_handler)&FKAstroInterface::e_ReflectPad, *this );
 
-      GUI->DeviceLabel.SetText( "Compute device:" );
+      GUI->DeviceLabel.SetText( fka::Tr( "Compute device:" ) );
       AlignParameterLabel( GUI->DeviceLabel, labelWidth );
-      GUI->DeviceCombo.AddItem( "Automatic (GPU)" );
-      GUI->DeviceCombo.AddItem( "GPU" );
-      GUI->DeviceCombo.AddItem( "CPU" );
+      GUI->DeviceCombo.AddItem( fka::Tr( "Automatic (GPU)" ) );
+      GUI->DeviceCombo.AddItem( fka::Tr( "GPU" ) );
+      GUI->DeviceCombo.AddItem( fka::Tr( "CPU" ) );
       GUI->DeviceCombo.SetCurrentItem( m_device );
       GUI->DeviceCombo.OnItemSelected(
          (pcl::ComboBox::item_event_handler)&FKAstroInterface::e_Device, *this );
@@ -289,7 +302,7 @@ bool FKAstroInterface::Launch( const pcl::MetaProcess&,
       GUI->DeviceSizer.Add( GUI->DeviceLabel );
       GUI->DeviceSizer.Add( GUI->DeviceCombo );
 
-      GUI->VerboseCheck.SetText( "Verbose console output" );
+      GUI->VerboseCheck.SetText( fka::Tr( "Verbose console output" ) );
       GUI->VerboseCheck.SetChecked( m_verbose );
       GUI->VerboseCheck.OnCheck(
          (pcl::Button::check_event_handler)&FKAstroInterface::e_Verbose, *this );
