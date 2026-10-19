@@ -39,7 +39,7 @@ fk-astro/
 - Xcode(MacOSX SDK)
 
 ```bash
-cd ~/workplace/fk-astro
+cd fk-astro
 make -j8            # 编译第三方库 + PCL + 模块(首次约 10–20 分钟)
 ```
 
@@ -54,7 +54,7 @@ PixInsight **强制要求模块签名**(`.xsgn`,Ed25519),未签名模块无法�
 一键流程(先在 PixInsight `Edit > Local Signing Identity...` 创建过本地签名身份):
 
 ```bash
-XSSK=~/workplace/fk-astro/dev.xssk ./install.sh
+XSSK=dev.xssk ./install.sh
 # 提示输入 .xssk 密码;或 XSSK_PASSWORD=... ./install.sh
 ```
 
@@ -66,13 +66,12 @@ XSSK=~/workplace/fk-astro/dev.xssk ./install.sh
 
 ```bash
 /Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight \
-    --sign-module-file=$HOME/workplace/fk-astro/dist/FKAstro-pxm.dylib \
+    --sign-module-file=dist/FKAstro-pxm.dylib \
     --xssk-file=<你的密钥文件.xssk> --xssk-password="<密码>"
 sudo cp dist/FKAstro-pxm.dylib dist/FKAstro-pxm.xsgn /Applications/PixInsight/bin/
 ```
 
-发布给其他人用则需申请 CPD(Certified PixInsight Developer),
-详见本机文档 `/Applications/PixInsight/doc/docs/CodeSigning/`。
+发布给其他人用则需申请 CPD(Certified PixInsight Developer)。
 
 ## 使用
 
@@ -140,7 +139,7 @@ FKv2 仍走旧网格和逐块逆变换，不能代表新 FKv3 逻辑。
 
 | 设置 | 值 |
 |---|---|
-| modelPath | 解密后的明文 `BlurXTerminator.5.mlpackage`(见 `~/py-astro`) |
+| modelPath | 解密后的明文 `BlurXTerminator.5.mlpackage` |
 | normScheme | **FKv3** |
 | sharpenStars / adjustHalos / psf / autoPSF / sharpenNonstellar | 与官方 BXT 界面同值 |
 | correctOnly | 按需(false = 锐化,true = 仅校正) |
