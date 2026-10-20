@@ -60,7 +60,10 @@ public:
 
 // ---------------------------------------------------------------------------
 
-extern "C" PCL_MODULE_EXPORT int32_t InstallPixInsightModule( int32_t /*mode*/ )
+// PCL_MODULE_EXPORT already expands to `extern "C" __attribute__((visibility("default")))`
+// on clang, so no extra linkage specifier here (it would trigger
+// -Wduplicate-decl-specifier).
+PCL_MODULE_EXPORT int32_t InstallPixInsightModule( int32_t /*mode*/ )
 {
    /*
     * N.B. The MetaModule constructor installs the new module object as the

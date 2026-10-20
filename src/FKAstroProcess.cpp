@@ -463,11 +463,9 @@ static void WriteFKv3T( pcl::GenericImage<P>& img, const fka::fkv3::ArcsinhNorma
    }
 }
 
-// Local half-float conversions for memory-lean accumulators.
-static uint16_t FK_ToHalf( float f );
-static float FK_ToFloat( uint16_t h );
-
-static inline uint16_t FK_ToHalfImpl( float f )
+// Local half-float conversions for memory-lean accumulators (recovered from
+// the host; not yet wired into the pipeline, kept as reference).
+[[maybe_unused]] static inline uint16_t FK_ToHalfImpl( float f )
 {
    uint32_t x;
    std::memcpy( &x, &f, 4 );
@@ -483,7 +481,7 @@ static inline uint16_t FK_ToHalfImpl( float f )
    return uint16_t( sign | ( uint32_t( exp ) << 10 ) | ( man >> 13 ) );
 }
 
-static inline float FK_ToFloatImpl( uint16_t h )
+[[maybe_unused]] static inline float FK_ToFloatImpl( uint16_t h )
 {
    uint32_t sign = uint32_t( h & 0x8000u ) << 16;
    uint32_t exp  = ( h >> 10 ) & 0x1Fu;
@@ -509,9 +507,6 @@ static inline float FK_ToFloatImpl( uint16_t h )
    std::memcpy( &f, &bits, 4 );
    return f;
 }
-
-static uint16_t FK_ToHalf( float f ) { return FK_ToHalfImpl( f ); }
-static float FK_ToFloat( uint16_t h ) { return FK_ToFloatImpl( h ); }
 
 
 // ------------------------------------------------------------------
